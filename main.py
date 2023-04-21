@@ -35,7 +35,8 @@ experiment_id = 'e00eb1e7-cc1b-417a-87fe-a8dfff2a2c29'
 
 op = Optimizer(experiment_id=experiment_id)
 # study = op.optimize(direction='minimize', n_trials=2)
-result, best_pipeline = op.execute_optimization(direction='minimize', n_trials=2)
+best_pipeline = op.execute_optimization(direction='minimize', n_trials=2)
+best_pipeline
 
 # import constants
 # from util import utility_functions as uf

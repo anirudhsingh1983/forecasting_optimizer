@@ -181,4 +181,5 @@ class Optimizer():
             oh_encoder_min_frequency,
             model_to_train,
         )
-        return result, best_study_params
+        best_study_params["model_to_train"] = (best_study_params["model_to_train"], result)
+        return best_study_params
