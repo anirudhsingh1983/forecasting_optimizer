@@ -425,63 +425,90 @@ class MdfSeqBaseModel(MdfBaseModel):
     def get_optuna_seq_objective(self, estimator_class, get_model_params, X, y, cv, scoring):
         def objective(trial):
             params = get_model_params(trial)
-
-            input = Input(shape=(SEQ_DATA_LEN, X.shape[-1]))
-            output = estimator_class(**params)(input)
-            model = Model(inputs=input, outputs=output)
             optimizer_args = self.get_optimizer_optuna_args(trial)
             optimizer = tf.keras.optimizers.Adam(**optimizer_args)
-            model.compile(optimizer=optimizer, loss='mse', metrics=['mse'])
-            model.fit(X, y, epochs=self.training_epochs)
-            metric = model.evaluate(X, y)[0]
-            return metric
+
+            scores = []
+            for train_index, test_index in cv.split(X):
+                train_x = X[train_index]
+                train_y = y[train_index]
+                test_x = X[test_index]
+                test_y = y[test_index]
+                input = Input(shape=(SEQ_DATA_LEN, train_x.shape[-1]))
+                output = estimator_class(**params)(input)
+                model = Model(inputs=input, outputs=output)
+                model.compile(optimizer=optimizer, loss='mse', metrics=['mse'])
+                model.fit(train_x, train_y, epochs=self.training_epochs)
+                score = model.evaluate(test_x, test_y)[0]
+                scores.append(score)
+
+            return np.mean(scores)
 
         return objective
 
-    def seq_train_with_timeseries_cv(self, estimator_class, default_params):
+    def seq_train_with_timeseries_cv(self, estimator_class, param_grid):
         _, _, _, x_train, y_train, x_val, y_val, _, _ = self.datasets
 
+        if TIMESERIES_CV_APPROACH == constants.SLIDING_WINDOW_NAME:
+            cv = TimeSeriesSplit(
+                n_splits=CV_FOLDS,
+                max_train_size=TIMESERIES_CV_WINDOW,
+            )
+        elif TIMESERIES_CV_APPROACH == constants.EXPANDING_WINDOW_NAME:
+            cv = TimeSeriesSplit(
+                n_splits=CV_FOLDS,
+                max_train_size=None,  # this will make the splits use expsndign window
+            )
+        else:
+            logging.error("Invalid timeseries CV approach")
+
         if TUNE_USING_OPTUNA:
-            if TIMESERIES_CV_APPROACH == constants.SLIDING_WINDOW_NAME:
-                cv = TimeSeriesSplit(
-                    n_splits=CV_FOLDS,
-                    max_train_size=TIMESERIES_CV_WINDOW,
-                )
-            elif TIMESERIES_CV_APPROACH == constants.EXPANDING_WINDOW_NAME:
-                cv = TimeSeriesSplit(
-                    n_splits=CV_FOLDS,
-                    max_train_size=None,  # this will make the splits use expsndign window
-                )
-
-            else:
-                logging.error("Invalid timeseries CV approach")
-
             objective = self.get_optuna_seq_objective(estimator_class=estimator_class,
                                                       get_model_params=self.get_optuna_params, X=x_train, y=y_train,
                                                       cv=cv, scoring=self.metric)
             study = self.tune_with_optuna(objective, n_trials=NUM_OPTUNA_TRIALS)
             best_trial = study.best_trial
-            best_study_params = study.best_params
+            best_params = study.best_params
             model_params = self.get_optuna_params(best_trial)
             optimizer_params = self.get_optimizer_optuna_args(best_trial)
-            model_params = {k: v for k, v in best_study_params.items() if k in model_params}
-            optimizer_params = {k: v for k, v in best_study_params.items() if k in optimizer_params}
+            model_params = {k: v for k, v in best_params.items() if k in model_params}
+            optimizer_params = {k: v for k, v in best_params.items() if k in optimizer_params}
             input = Input(shape=(SEQ_DATA_LEN, x_train.shape[-1]))
             output = estimator_class(**model_params)(input)
             model = Model(inputs=input, outputs=output)
             optimizer = tf.keras.optimizers.Adam(**optimizer_params)
             model.compile(optimizer=optimizer, loss='mse', metrics=['mse'])
             model.fit(y=y_train, x=x_train)
-            return model, study.best_params
+            return model, best_params
         else:
+            param_grid = [dict(zip(list(param_grid.keys()), comb)) for comb in
+                          list(itertools.product(*param_grid.values()))]
+            results = []
+            for params in param_grid:
+                scores = []
+                for train_index, test_index in cv.split(x_train):
+                    train_x = x_train[train_index]
+                    train_y = y_train[train_index]
+                    test_x = x_train[test_index]
+                    test_y = y_train[test_index]
+                    input = Input(shape=(SEQ_DATA_LEN, train_x.shape[-1]))
+                    output = estimator_class(**params)(input)
+                    model = Model(inputs=input, outputs=output)
+                    model.compile(optimizer='adam', loss='mse', metrics=['mse'])
+                    model.fit(train_x, train_y, epochs=self.training_epochs)
+                    score = model.evaluate(test_x, test_y)[0]
+                    scores.append(score)
+                results.append((params, np.mean(scores)))
+
+            best_params = sorted(results, key=lambda x: x[1])[0][0]
+
             input = Input(shape=(SEQ_DATA_LEN, x_train.shape[-1]))
-            output = estimator_class(**default_params)(input)
+            output = estimator_class(**best_params)(input)
             model = Model(inputs=input, outputs=output)
 
             model.compile(optimizer='adam', loss='mse', metrics=['mse'])
             model.fit(x_train, y_train, epochs=self.training_epochs)
-            model.evaluate(x_val, y_val)
-            return model, None
+            return model, best_params
 
 
 class MdfSarimax(MdfTsBaseModel):
@@ -812,26 +839,13 @@ class MdfSeqModel(MdfSeqBaseModel):
         self.model_class = None  # abstract
 
     def fit(self):
-        train, val, test = self.data
-
         try:
             param_grid = experiment_constants.MODEL_PARAM_GRIDS[self.model_name]
         except:
             param_grid = self.default_param_grid
 
-        if TIMESERIES_USE_CV:
-            default_params = {
-                "units": 1,
-                "return_sequences": False,
-                "activation": 'tanh',
-            }
-            model, best_params = self.seq_train_with_timeseries_cv(estimator_class=self.model_class,
-                                                                   default_params=default_params)
-        else:
-            model, best_params = self.cs_train_with_sklearn_cv(model=self.model_class, param_grid=param_grid,
-                                                               data=train)
-
-        self.model = model
+        self.model, best_params = self.seq_train_with_timeseries_cv(estimator_class=self.model_class,
+                                                               param_grid=param_grid)
         return self, best_params
 
     def get_optuna_params(self, trial):

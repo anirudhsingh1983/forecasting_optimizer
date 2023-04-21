@@ -34,14 +34,14 @@ PREPROCESSING_FUNCTION = None
 TRAIN_VAL_SPLIT_DATE = '2022-10-01'
 VAL_TEST_SPLIT_DATE = '2023-01-01'
 CATEGORICAL_ENGINEERED_FEATURES = ['day', 'month']
-MODELS_TO_TRAIN = [
-    constants.RIDGE_NAME, constants.LASSO_NAME, constants.ELASTICNET_NAME,
-    constants.LINEARREGRESSION_NAME, constants.XGB_NAME, constants.LSTM_NAME, constants.GRU_NAME,
-    # constants.SARIMAX_NAME
-]
 # MODELS_TO_TRAIN = [
-#     constants.SARIMAX_NAME
+#     constants.RIDGE_NAME, constants.LASSO_NAME, constants.ELASTICNET_NAME,
+#     constants.LINEARREGRESSION_NAME, constants.XGB_NAME, constants.LSTM_NAME, constants.GRU_NAME,
+#     # constants.SARIMAX_NAME
 # ]
+MODELS_TO_TRAIN = [
+    constants.LSTM_NAME
+]
 EVALUATION_METRIC_TO_USE = None
 PREDICTION_NAME = 'prediction'
 
@@ -87,13 +87,19 @@ MODEL_PARAM_GRIDS = {
         'max_depth': [3, 7]
         },
     constants.SARIMAX_NAME: {
-    'max_p': [5],
-    'max_d': [3],
-    'max_q': [5],
-    'max_P': [5],
-    'max_D': [3],
-    'max_Q': [5],
-}
+            'max_p': [5],
+            'max_d': [3],
+            'max_q': [5],
+            'max_P': [5],
+            'max_D': [3],
+            'max_Q': [5],
+        },
+    constants.LSTM_NAME: {
+            "units": [1],
+            "return_sequences": [False],
+            "activation": ['tanh'],
+            "dropout": list(np.arange(0.1, 0.2, 0.1)),
+        },
 }
 
 SEQ_DATA_LEN = 6
@@ -101,8 +107,8 @@ SEQ_STRIDE = 1
 SEQ_SAMPLING = 1
 
 TUNE_USING_OPTUNA = True
-NUM_OPTUNA_TRIALS = 100
-LSTM_EPOCHS = 20
+NUM_OPTUNA_TRIALS = 2
+LSTM_EPOCHS = 2
 GRU_EPOCHS = 20
 
 DATASET_FOR_PERFORMANCE_OPTIMIZATION = constants.VAL_NAME  # possible values are: [constants.VAL_NAME, constants.TEST_NAME]
