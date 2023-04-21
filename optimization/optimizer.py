@@ -134,7 +134,7 @@ class Optimizer():
             model=model_to_train,
         ).execute_modeling()
 
-        return model_performances[model_to_train][self.dataset_for_performance_optimization]
+        return model_performances[model_to_train]
 
     def get_optimization_objective(self):
         def objective(trial):
@@ -152,6 +152,7 @@ class Optimizer():
                 oh_encoder_min_frequency,
                 model_to_train,
             )
+            result = result[self.dataset_for_performance_optimization]
             return result
 
         return objective
@@ -162,22 +163,22 @@ class Optimizer():
         study.optimize(objective, n_trials=n_trials)
         return study
 
-    # def execute_optimization(self, direction='minimize', n_trials=1000):
-    #     study = self.optimize(self, direction=direction, n_trials=n_trials)
-    #     best_params = study.best_params
-    #     imputer = best_params["imputer"]
-    #     outlier_method = best_params["outlier_method"]
-    #     feature_engineering_scaler = best_params["feature_engineering_scaler"]
-    #     oh_encoder_min_frequency = best_params["oh_encoder_min_frequency"]
-    #     model_to_train = best_params["model_to_train"]
-    #
-    #     result = self.run_pipeline(
-    #         trial,
-    #         imputer,
-    #         outlier_method,
-    #         feature_engineering_scaler,
-    #         oh_encoder_min_frequency,
-    #         model_to_train,
-    #     )
-    #     return result
-    #
+    def execute_optimization(self, direction='minimize', n_trials=1000):
+        study = self.optimize(direction=direction, n_trials=n_trials)
+        best_study_params = study.best_params
+        best_trial = study.best_trial
+        imputer = best_study_params["imputer"]
+        outlier_method = best_study_params["outlier_method"]
+        feature_engineering_scaler = best_study_params["feature_engineering_scaler"]
+        oh_encoder_min_frequency = best_study_params["oh_encoder_min_frequency"]
+        model_to_train = best_study_params["model_to_train"]
+
+        result = self.run_pipeline(
+            best_trial,
+            imputer,
+            outlier_method,
+            feature_engineering_scaler,
+            oh_encoder_min_frequency,
+            model_to_train,
+        )
+        return result, best_study_params
