@@ -10,7 +10,6 @@ from sklearn.ensemble import IsolationForest
 import constants
 import experiment_settings
 import framework_settings
-from eda import eda_constants
 from util import utility_functions as uf
 
 experiment_constants = importlib.import_module(
@@ -19,16 +18,14 @@ experiment_constants = importlib.import_module(
 start = datetime.now()
 log = logging.getLogger(__name__)
 
-log.info(f"Backtesting started at: {str(start)}")
-
 TARGET_COL = experiment_constants.TARGET_COL
 
 try:
     REMOVE_OUTLIERS = experiment_constants.REMOVE_OUTLIERS
     if experiment_constants.REMOVE_OUTLIERS is None:
-        REMOVE_OUTLIERS = eda_constants.DEFAULT_REMOVE_OUTLIERS
+        REMOVE_OUTLIERS = framework_settings.DEFAULT_REMOVE_OUTLIERS
 except:
-    REMOVE_OUTLIERS = eda_constants.DEFAULT_REMOVE_OUTLIERS
+    REMOVE_OUTLIERS = framework_settings.DEFAULT_REMOVE_OUTLIERS
 
 try:
     OUTLIER_METHOD = experiment_constants.OUTLIER_METHOD
@@ -40,9 +37,9 @@ except:
 try:
     MISSING_VALUE_THRESHOLD = experiment_constants.MISSING_VALUE_THRESHOLD
     if experiment_constants.MISSING_VALUE_THRESHOLD is None:
-        MISSING_VALUE_THRESHOLD = eda_constants.DEFAULT_MISSING_VALUE_THRESHOLD
+        MISSING_VALUE_THRESHOLD = framework_settings.DEFAULT_MISSING_VALUE_THRESHOLD
 except:
-    MISSING_VALUE_THRESHOLD = eda_constants.DEFAULT_MISSING_VALUE_THRESHOLD
+    MISSING_VALUE_THRESHOLD = framework_settings.DEFAULT_MISSING_VALUE_THRESHOLD
 
 
 def _load_data(experiment_id):
@@ -122,16 +119,12 @@ def _identify_outliers(data):
         return data_norm, data_ol
 
 
-def execute_eda(experiment_id):
-    data = _load_data(experiment_id=experiment_id)
+def execute_eda(experiment_id, data, plots=True):
     data = _fill_timeseries_gaps(data)
-    _generate_plots(data=data)
+    if plots:
+        _generate_plots(data=data)
     mv, mv_high = _calculate_missing_values(data=data)
     is_stationary = _check_target_stationarity(data)
     data_norm, data_ol = _identify_outliers(data)
-    if REMOVE_OUTLIERS:
-        data = data_norm
-
     uf.save_df(data, experiment_id, name=f"{constants.EDA_NAME}")
-
-    return mv, mv_high, is_stationary, data_norm, data_ol
+    return data, mv, mv_high, is_stationary, data_norm, data_ol

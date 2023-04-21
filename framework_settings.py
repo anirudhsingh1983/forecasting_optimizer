@@ -1,6 +1,13 @@
+import numpy as np
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.preprocessing import OneHotEncoder
+
 import constants
 from modeling.modeling_constants import NEG_MSE_NAME, XGB_NAME
 
+DEFAULT_MISSING_VALUE_THRESHOLD = 0.4
+DEFAULT_REMOVE_OUTLIERS = True
 DEFAULT_OUTLIER_METHOD = constants.OUTLIER_METHOD_ISOLATIONFOREST_NAME
 DEFAULT_TUNE_USING_OPTUNA = True
 DEFAULT_CV_FOLDS = 5
@@ -16,3 +23,7 @@ DEFAULT_TIMESERIES_CV_APPROACH = constants.EXPANDING_WINDOW_NAME
 DEFAULT_LSTM_EPOCHS = 100
 DEFAULT_GRU_EPOCHS = 100
 DEFAULT_NUM_OPTUNA_TRIALS = 100
+DEFAULT_IMPUTER = SimpleImputer(missing_values=np.nan, strategy='mean')
+DEFAULT_CATEGORICAL_FEATURE_ENCODER = OneHotEncoder(handle_unknown='ignore', min_frequency=0.02)
+DEFAULT_FEATURE_ENGINEERING_SCALER = MinMaxScaler()
+DEFAULT_DATASET_FOR_PERFORMANCE_OPTIMIZATION = constants.VAL_NAME

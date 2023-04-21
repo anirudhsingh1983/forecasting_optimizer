@@ -166,7 +166,7 @@ def deepsum_with_len(obj, exclude_dict_keys=[], ignore_na=True):
     return sum, len
 
 
-def get_date_features(df, date_col=None):
+def get_date_features(trial, df, date_col=None):
     """
     Get features from a specific date and add those features to the dataframe df.
     """

@@ -37,7 +37,7 @@ CATEGORICAL_ENGINEERED_FEATURES = ['day', 'month']
 MODELS_TO_TRAIN = [
     constants.RIDGE_NAME, constants.LASSO_NAME, constants.ELASTICNET_NAME,
     constants.LINEARREGRESSION_NAME, constants.XGB_NAME, constants.LSTM_NAME, constants.GRU_NAME,
-    constants.SARIMAX_NAME
+    # constants.SARIMAX_NAME
 ]
 # MODELS_TO_TRAIN = [
 #     constants.SARIMAX_NAME
@@ -59,13 +59,13 @@ TIMESERIES_TARGET_FILL_GAP_VALUE = 0
 # - 'zscore'
 # - 'svmoneclass'
 # - 'isolationforest'
-# OUTLIER_METHOD = 'isolationforest'
+OUTLIER_METHODS = ['isolationforest']
 REMOVE_OUTLIERS = False
 
 
 FEATURE_ENGINEERING_FUNCTION = uf.get_date_features
 
-IMPUTER = IterativeImputer(max_iter=10, random_state=0)
+IMPUTERS = [IterativeImputer(max_iter=10, random_state=0)]
 
 CATEGORICAL_FEATURE_ENCODER = OneHotEncoder(handle_unknown='ignore', min_frequency = 0.02)
 FEATURE_ENGINEERING_SCALER = None
@@ -104,3 +104,5 @@ TUNE_USING_OPTUNA = True
 NUM_OPTUNA_TRIALS = 100
 LSTM_EPOCHS = 20
 GRU_EPOCHS = 20
+
+DATASET_FOR_PERFORMANCE_OPTIMIZATION = constants.VAL_NAME  # possible values are: [constants.VAL_NAME, constants.TEST_NAME]
