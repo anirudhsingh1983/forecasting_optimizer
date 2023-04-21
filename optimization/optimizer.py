@@ -127,14 +127,14 @@ class Optimizer():
             feature_engineering_scaler=feature_engineering_scaler,
         ).execute_feature_engineering()
 
-        model_performances = Modeling(
+        model_performance = Modeling(
             experiment_id=self.experiment_id,
             trial=trial,
             data=(train, val, test),
             model=model_to_train,
         ).execute_modeling()
 
-        return model_performances[model_to_train]
+        return model_performance
 
     def get_optimization_objective(self):
         def objective(trial):

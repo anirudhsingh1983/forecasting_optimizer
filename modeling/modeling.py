@@ -2,6 +2,8 @@ import importlib
 import logging
 from datetime import datetime
 
+import numpy as np
+
 import constants
 import experiment_settings
 import framework_settings
@@ -45,18 +47,21 @@ class Modeling():
         return train_metric, val_metric, test_metric, best_params
 
     def execute_modeling(self):
-        model_performances = dict()
-        for model_name in self._models_to_train:
-            train_metric, val_metric, test_metric, best_params = self._train_one_model(
-                model_name=model_name,
-            )
-            model_performances[model_name] = {
-                constants.BEST_PARAMETERS_NAME: best_params,
-                constants.TRAIN_NAME: train_metric,
-                constants.VAL_NAME: val_metric,
-                constants.TEST_NAME: test_metric,
-            }
+        train_metric, val_metric, test_metric, best_params = self._train_one_model(
+            model_name=self.model,
+        )
+        model_performance = {
+            constants.BEST_PARAMETERS_NAME: best_params,
+            constants.TRAIN_NAME: train_metric,
+            constants.VAL_NAME: val_metric,
+            constants.TEST_NAME: test_metric,
+        }
+        model_key = ""
+        for k, v in model_performance[constants.BEST_PARAMETERS_NAME].items():
+            if isinstance(v, float):
+                v = np.round(v, 4)
+            model_key = f"{model_key}_{k}_{v}"
 
-        uf.save_data(model_performances, self.experiment_id,
-                     name=f"{constants.MODELING_NAME}_{constants.MODEL_PERFORMANCE_RESULT_NAME}")
-        return model_performances
+        uf.save_data(model_performance, self.experiment_id,
+                     name=f"{constants.MODELING_NAME}_{model_key}_{constants.MODEL_PERFORMANCE_RESULT_NAME}")
+        return model_performance

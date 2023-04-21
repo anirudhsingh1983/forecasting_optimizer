@@ -13,6 +13,7 @@ from eda import eda
 from feature_engineering import feature_engineering
 from modeling import modeling
 from optimization.optimizer import Optimizer
+from util import utility_functions as uf
 
 pd.set_option('display.expand_frame_repr', True)
 pd.set_option('display.max_columns', None)  # Set to None for unlimited number of output rows.
@@ -32,11 +33,12 @@ log = logging.getLogger(__name__)
 log.info(f"Backtesting started at: {str(start)}")
 
 experiment_id = 'e00eb1e7-cc1b-417a-87fe-a8dfff2a2c29'
+# experiment_id = experiment_constants.EXPERIMENT_ID
 
 op = Optimizer(experiment_id=experiment_id)
-# study = op.optimize(direction='minimize', n_trials=2)
-best_pipeline = op.execute_optimization(direction='minimize', n_trials=2)
-best_pipeline
+best_pipeline = op.execute_optimization(direction='minimize', n_trials=100)
+print(best_pipeline)
+uf.save_data(best_pipeline, experiment_id, name=f"final_result")
 
 # import constants
 # from util import utility_functions as uf
