@@ -62,8 +62,8 @@ def read_df(experiment_id, name):
     return data
 
 
-def save_data(data, experiment_id, name):
-    file_name = f"{constants.OUTPUT_DATA_FOLDER}/{experiment_id}_{name}.pickle"
+def save_data(data, experiment_id, name, name_len_limit=100):
+    file_name = f"{constants.OUTPUT_DATA_FOLDER}/{experiment_id}_{name[:name_len_limit]}.pickle"
     with open(file_name, 'wb') as f:
         pickle.dump(data, f)
 

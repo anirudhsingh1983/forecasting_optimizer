@@ -27,3 +27,4 @@ DEFAULT_IMPUTER = SimpleImputer(missing_values=np.nan, strategy='mean')
 DEFAULT_CATEGORICAL_FEATURE_ENCODER = OneHotEncoder(handle_unknown='ignore', min_frequency=0.02)
 DEFAULT_FEATURE_ENGINEERING_SCALER = MinMaxScaler()
 DEFAULT_DATASET_FOR_PERFORMANCE_OPTIMIZATION = constants.VAL_NAME
+DEFAULT_MAX_SEQUENTIAL_NN_LAYERS = 5

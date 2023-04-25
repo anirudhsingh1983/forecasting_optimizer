@@ -117,6 +117,13 @@ except:
     SEQ_SAMPLING = framework_settings.DEFAULT_SEQ_SAMPLING
 
 try:
+    MAX_SEQUENTIAL_NN_LAYERS = experiment_constants.MAX_SEQUENTIAL_NN_LAYERS
+    if MAX_SEQUENTIAL_NN_LAYERS is None:
+        MAX_SEQUENTIAL_NN_LAYERS = framework_settings.DEFAULT_MAX_SEQUENTIAL_NN_LAYERS
+except:
+    MAX_SEQUENTIAL_NN_LAYERS = framework_settings.DEFAULT_MAX_SEQUENTIAL_NN_LAYERS
+
+try:
     TUNE_USING_OPTUNA = experiment_constants.TUNE_USING_OPTUNA
     if TUNE_USING_OPTUNA is None:
         TUNE_USING_OPTUNA = framework_settings.DEFAULT_TUNE_USING_OPTUNA
@@ -169,7 +176,7 @@ class MdfBaseModel(ABC):
         return study
 
     @abstractmethod
-    def get_optuna_params(self, trial):
+    def get_optuna_params(self, trial, **kwargs):
         """
         abstract function to be overridden sub-class implementing concrete model fitting
         """
@@ -389,6 +396,7 @@ class MdfCsBaseModel(MdfBaseModel):
 class MdfSeqBaseModel(MdfBaseModel):
     def __init__(self, data, target_col_name, experiment_id):
         super().__init__(data, target_col_name, experiment_id)
+        self.model_class = None  # abstract
 
     def get_seq_datasets(self):
         train, val, test = self.data
@@ -402,6 +410,10 @@ class MdfSeqBaseModel(MdfBaseModel):
                                       stride=SEQ_STRIDE)
 
         return train, val, test, x_train, y_train, x_val, y_val, x_test, y_test
+
+    @abstractmethod
+    def get_model_object(self, trial):
+        pass
 
     def get_optimizer_optuna_args(self, trial):
         optimizer_args = {
@@ -422,9 +434,8 @@ class MdfSeqBaseModel(MdfBaseModel):
         }
         return optimizer_args
 
-    def get_optuna_seq_objective(self, estimator_class, get_model_params, X, y, cv, scoring):
+    def get_optuna_seq_objective(self, get_model_params, X, y, cv):
         def objective(trial):
-            params = get_model_params(trial)
             optimizer_args = self.get_optimizer_optuna_args(trial)
             optimizer = tf.keras.optimizers.Adam(**optimizer_args)
 
@@ -434,9 +445,7 @@ class MdfSeqBaseModel(MdfBaseModel):
                 train_y = y[train_index]
                 test_x = X[test_index]
                 test_y = y[test_index]
-                input = Input(shape=(SEQ_DATA_LEN, train_x.shape[-1]))
-                output = estimator_class(**params)(input)
-                model = Model(inputs=input, outputs=output)
+                model = self.get_model_object(trial)
                 model.compile(optimizer=optimizer, loss='mse', metrics=['mse'])
                 model.fit(train_x, train_y, epochs=self.training_epochs)
                 score = model.evaluate(test_x, test_y)[0]
@@ -446,7 +455,7 @@ class MdfSeqBaseModel(MdfBaseModel):
 
         return objective
 
-    def seq_train_with_timeseries_cv(self, estimator_class, param_grid):
+    def seq_train_with_timeseries_cv(self, param_grid):
         _, _, _, x_train, y_train, x_val, y_val, _, _ = self.datasets
 
         if TIMESERIES_CV_APPROACH == constants.SLIDING_WINDOW_NAME:
@@ -457,25 +466,20 @@ class MdfSeqBaseModel(MdfBaseModel):
         elif TIMESERIES_CV_APPROACH == constants.EXPANDING_WINDOW_NAME:
             cv = TimeSeriesSplit(
                 n_splits=CV_FOLDS,
-                max_train_size=None,  # this will make the splits use expsndign window
+                max_train_size=None,  # this will make the splits use expanding window
             )
         else:
             logging.error("Invalid timeseries CV approach")
 
         if TUNE_USING_OPTUNA:
-            objective = self.get_optuna_seq_objective(estimator_class=estimator_class,
-                                                      get_model_params=self.get_optuna_params, X=x_train, y=y_train,
-                                                      cv=cv, scoring=self.metric)
+            objective = self.get_optuna_seq_objective(get_model_params=self.get_optuna_params, X=x_train, y=y_train,
+                                                      cv=cv)
             study = self.tune_with_optuna(objective, n_trials=NUM_OPTUNA_TRIALS)
             best_trial = study.best_trial
             best_params = study.best_params
-            model_params = self.get_optuna_params(best_trial)
             optimizer_params = self.get_optimizer_optuna_args(best_trial)
-            model_params = {k: v for k, v in best_params.items() if k in model_params}
             optimizer_params = {k: v for k, v in best_params.items() if k in optimizer_params}
-            input = Input(shape=(SEQ_DATA_LEN, x_train.shape[-1]))
-            output = estimator_class(**model_params)(input)
-            model = Model(inputs=input, outputs=output)
+            model = self.get_model_object(best_trial)
             optimizer = tf.keras.optimizers.Adam(**optimizer_params)
             model.compile(optimizer=optimizer, loss='mse', metrics=['mse'])
             model.fit(y=y_train, x=x_train)
@@ -484,7 +488,7 @@ class MdfSeqBaseModel(MdfBaseModel):
             param_grid = [dict(zip(list(param_grid.keys()), comb)) for comb in
                           list(itertools.product(*param_grid.values()))]
             results = []
-            for params in param_grid:
+            for model_params in param_grid:
                 scores = []
                 for train_index, test_index in cv.split(x_train):
                     train_x = x_train[train_index]
@@ -492,18 +496,18 @@ class MdfSeqBaseModel(MdfBaseModel):
                     test_x = x_train[test_index]
                     test_y = y_train[test_index]
                     input = Input(shape=(SEQ_DATA_LEN, train_x.shape[-1]))
-                    output = estimator_class(**params)(input)
+                    output = self.model_class(**model_params)(input)
                     model = Model(inputs=input, outputs=output)
                     model.compile(optimizer='adam', loss='mse', metrics=['mse'])
                     model.fit(train_x, train_y, epochs=self.training_epochs)
                     score = model.evaluate(test_x, test_y)[0]
                     scores.append(score)
-                results.append((params, np.mean(scores)))
+                results.append((model_params, np.mean(scores)))
 
             best_params = sorted(results, key=lambda x: x[1])[0][0]
 
             input = Input(shape=(SEQ_DATA_LEN, x_train.shape[-1]))
-            output = estimator_class(**best_params)(input)
+            output = self.model_class(**best_params)(input)
             model = Model(inputs=input, outputs=output)
 
             model.compile(optimizer='adam', loss='mse', metrics=['mse'])
@@ -825,7 +829,7 @@ class MdfLgbm(MdfCsBaseModel):
         return params
 
 
-class MdfSeqModel(MdfSeqBaseModel):
+class MdfCnnModel(MdfSeqBaseModel):
     def __init__(self, data, target_col_name, experiment_id):
         super().__init__(data, target_col_name, experiment_id)
         self.model_name = None  # abstract
@@ -844,8 +848,7 @@ class MdfSeqModel(MdfSeqBaseModel):
         except:
             param_grid = self.default_param_grid
 
-        self.model, best_params = self.seq_train_with_timeseries_cv(estimator_class=self.model_class,
-                                                               param_grid=param_grid)
+        self.model, best_params = self.seq_train_with_timeseries_cv(param_grid=param_grid)
         return self, best_params
 
     def get_optuna_params(self, trial):
@@ -856,6 +859,60 @@ class MdfSeqModel(MdfSeqBaseModel):
             "dropout": trial.suggest_float("dropout", 0.1, 0.6, step=0.1),
         }
         return params
+
+
+class MdfSeqModel(MdfSeqBaseModel):
+    def __init__(self, data, target_col_name, experiment_id):
+        super().__init__(data, target_col_name, experiment_id)
+        self.model_name = None  # abstract
+        self.default_param_grid = {
+            "units": [1],
+            "return_sequences": [False],
+            "activation": ['tanh', 'sigmoid', 'relu'],
+            "dropout": list(np.arange(0.1, 0.6, 0.1)),
+        }
+        self.datasets = self.get_seq_datasets()
+        self.model_class = None  # abstract
+
+    def get_optuna_params(self, trial, layer_name=str(1), drop_units=False):
+        if drop_units:
+            params = {
+                "activation": trial.suggest_categorical(f"activation_{layer_name}", ['tanh', 'sigmoid', 'relu']),
+                "dropout": trial.suggest_float(f"dropout_{layer_name}", 0.1, 0.6, step=0.1),
+            }
+        else:
+            params = {
+                "units": trial.suggest_int(f"units_{layer_name}", 1, self.datasets[3].shape[1]), # self.datasets[3] is X_train
+                "activation": trial.suggest_categorical(f"activation_{layer_name}", ['tanh', 'sigmoid', 'relu']),
+                "dropout": trial.suggest_float(f"dropout_{layer_name}", 0.1, 0.6, step=0.1),
+            }
+        return params
+
+    def get_model_object(self, trial):
+        num_layers = trial.suggest_int("num_layers", 1, MAX_SEQUENTIAL_NN_LAYERS)
+        input = Input(shape=(SEQ_DATA_LEN, self.datasets[3].shape[-1]))  # self.datasets[3] is X_train
+        if num_layers == 1:
+            first_layer_params = self.get_optuna_params(trial, layer_name=str(1), drop_units=True)
+            output = self.model_class(units=1, return_sequences=False, **first_layer_params)(input)
+        else:
+            first_layer_params = self.get_optuna_params(trial, layer_name=str(1), drop_units=False)
+            output = self.model_class(return_sequences=True, **first_layer_params)(input)
+            for i in np.arange(2, num_layers, 1):
+                middle_layer_params = self.get_optuna_params(trial, layer_name=str(i))
+                output = self.model_class(return_sequences=True, **middle_layer_params)(output)
+            last_layer_params = self.get_optuna_params(trial, layer_name=str(num_layers), drop_units=True)
+            output = self.model_class(units=1, return_sequences=False, **last_layer_params)(output)
+        model = Model(inputs=input, outputs=output)
+        return model
+
+    def fit(self):
+        try:
+            param_grid = experiment_constants.MODEL_PARAM_GRIDS[self.model_name]
+        except:
+            param_grid = self.default_param_grid
+
+        self.model, best_params = self.seq_train_with_timeseries_cv(param_grid=param_grid)
+        return self, best_params
 
 
 class MdfGru(MdfSeqModel):
@@ -876,14 +933,20 @@ class MdfGru(MdfSeqModel):
         except:
             self.training_epochs = framework_settings.DEFAULT_GRU_EPOCHS
 
-    def get_optuna_params(self, trial):
-        params = {
-            "units": trial.suggest_categorical("units", [1]),
-            "return_sequences": trial.suggest_categorical("return_sequences", [False]),
-            "activation": trial.suggest_categorical("activation", ['tanh', 'sigmoid', 'relu']),
-            "dropout": trial.suggest_float("dropout", 0.1, 0.6, step=0.1),
-        }
+    def get_optuna_params(self, trial, layer_name=str(1), drop_units=False):
+        if drop_units:
+            params = {
+                "activation": trial.suggest_categorical(f"activation_{layer_name}", ['tanh', 'sigmoid', 'relu']),
+                "dropout": trial.suggest_float(f"dropout_{layer_name}", 0.1, 0.6, step=0.1),
+            }
+        else:
+            params = {
+                "units": trial.suggest_int(f"units_{layer_name}", 1, self.datasets[3].shape[1]), # self.datasets[3] is X_train
+                "activation": trial.suggest_categorical(f"activation_{layer_name}", ['tanh', 'sigmoid', 'relu']),
+                "dropout": trial.suggest_float(f"dropout_{layer_name}", 0.1, 0.6, step=0.1),
+            }
         return params
+
 
 
 class MdfLstm(MdfSeqModel):
@@ -904,13 +967,18 @@ class MdfLstm(MdfSeqModel):
         except:
             self.training_epochs = framework_settings.DEFAULT_LSTM_EPOCHS
 
-    def get_optuna_params(self, trial):
-        params = {
-            "units": trial.suggest_categorical("units", [1]),
-            "return_sequences": trial.suggest_categorical("return_sequences", [False]),
-            "activation": trial.suggest_categorical("activation", ['tanh', 'sigmoid', 'relu']),
-            "dropout": trial.suggest_float("dropout", 0.1, 0.6, step=0.1),
-        }
+    def get_optuna_params(self, trial, layer_name=str(1), drop_units=False):
+        if drop_units:
+            params = {
+                "activation": trial.suggest_categorical(f"activation_{layer_name}", ['tanh', 'sigmoid', 'relu']),
+                "dropout": trial.suggest_float(f"dropout_{layer_name}", 0.1, 0.6, step=0.1),
+            }
+        else:
+            params = {
+                "units": trial.suggest_int(f"units_{layer_name}", 1, self.datasets[3].shape[1]), # self.datasets[3] is X_train
+                "activation": trial.suggest_categorical(f"activation_{layer_name}", ['tanh', 'sigmoid', 'relu']),
+                "dropout": trial.suggest_float(f"dropout_{layer_name}", 0.1, 0.6, step=0.1),
+            }
         return params
 
 
