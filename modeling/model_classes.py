@@ -20,8 +20,8 @@ from sktime.forecasting.model_selection import (
     ForecastingGridSearchCV,
     ExpandingWindowSplitter)
 from tensorflow.keras import Input
-from tensorflow.keras.layers import LSTM, GRU
-from tensorflow.keras.models import Model
+from tensorflow.keras.layers import LSTM, GRU, Conv2D, MaxPool2D, Dense, Dropout, Flatten
+from tensorflow.keras.models import Model, Sequential
 from xgboost import XGBRegressor
 
 import constants
@@ -115,6 +115,18 @@ try:
         SEQ_SAMPLING = framework_settings.DEFAULT_SEQ_SAMPLING
 except:
     SEQ_SAMPLING = framework_settings.DEFAULT_SEQ_SAMPLING
+
+try:
+    MAX_CNN_LAYERS = experiment_constants.MAX_CNN_LAYERS
+    if MAX_CNN_LAYERS is None:
+        MAX_CNN_LAYERS = framework_settings.DEFAULT_MAX_CNN_LAYERS
+except:
+    MAX_CNN_LAYERS = framework_settings.DEFAULT_MAX_CNN_LAYERS
+
+try:
+    MAX_CNN_FILTERS = experiment_constants.MAX_CNN_LAYERS
+except:
+    MAX_CNN_FILTERS = None
 
 try:
     MAX_SEQUENTIAL_NN_LAYERS = experiment_constants.MAX_SEQUENTIAL_NN_LAYERS
@@ -829,18 +841,66 @@ class MdfLgbm(MdfCsBaseModel):
         return params
 
 
-class MdfCnnModel(MdfSeqBaseModel):
+class MdfCnn(MdfSeqBaseModel):
     def __init__(self, data, target_col_name, experiment_id):
         super().__init__(data, target_col_name, experiment_id)
         self.model_name = None  # abstract
         self.default_param_grid = {
-            "units": [1],
-            "return_sequences": [False],
+            "filters": np.arange(1,5),
+            "kernel_size": [[3,3]],
             "activation": ['tanh', 'sigmoid', 'relu'],
-            "dropout": list(np.arange(0.1, 0.6, 0.1)),
+            "use_bias": [True, False],
         }
         self.datasets = self.get_seq_datasets()
-        self.model_class = None  # abstract
+        self.model_name = constants.CNN_NAME
+
+        try:
+            self.training_epochs = experiment_constants.CNN_EPOCHS
+            if self.training_epochs is None:
+                self.training_epochs = framework_settings.DEFAULT_CNN_EPOCHS
+        except:
+            self.training_epochs = framework_settings.DEFAULT_CNN_EPOCHS
+
+    def get_optuna_params(self, trial, max_kernel_height, layer_name=str(1)):
+        if MAX_CNN_FILTERS is None:
+            max_cnn_filters = self.datasets[3].shape[1]  # self.datasets[3] is X_train
+        else:max_cnn_filters = MAX_CNN_FILTERS
+
+        if max_cnn_filters > SEQ_DATA_LEN:
+            max_cnn_filters = SEQ_DATA_LEN
+
+        kernel_height = trial.suggest_int(f"kernel_height_{layer_name}", 1, max_kernel_height)
+        params = {
+            "filters": trial.suggest_int(f"filters_{layer_name}", 1, max_cnn_filters),
+            "activation": trial.suggest_categorical(f"activation_{layer_name}", [None, 'tanh', 'sigmoid', 'relu']),
+            "use_bias": trial.suggest_categorical(f"use_bias_{layer_name}", [True, False]),
+        }
+        return (params, kernel_height)
+
+    def get_model_object(self, trial):
+        num_layers = trial.suggest_int("num_layers", 1, MAX_CNN_LAYERS)
+        first_layer_params, kernel_height = self.get_optuna_params(
+            trial,
+            max_kernel_height=self.datasets[3].shape[1],
+            layer_name=str(1)
+        )
+        first_layer_params['kernel_size'] = [kernel_height, self.datasets[3].shape[-1]]
+
+        input = Input(shape=(SEQ_DATA_LEN, self.datasets[3].shape[-1], 1))  # self.datasets[3] is X_train
+        output = Conv2D(**first_layer_params)(input)
+
+        for i in np.arange(2, num_layers+1):
+            layer_params, kernel_height = self.get_optuna_params(trial, max_kernel_height=output.shape[1], layer_name=str(i))
+            layer_params['kernel_size'] = [kernel_height, 1]
+            output = Conv2D(**layer_params)(output)
+
+        droprate = trial.suggest_float("droprate", 0, 0.8)
+        output = Flatten()(output)
+        output = Dropout(droprate)(output)
+        output = Dense(1, activation="sigmoid")(output)
+
+        model = Model(inputs=input, outputs=output)
+        return model
 
     def fit(self):
         try:
@@ -850,15 +910,6 @@ class MdfCnnModel(MdfSeqBaseModel):
 
         self.model, best_params = self.seq_train_with_timeseries_cv(param_grid=param_grid)
         return self, best_params
-
-    def get_optuna_params(self, trial):
-        params = {
-            "units": trial.suggest_categorical("units", [1]),
-            "return_sequences": trial.suggest_categorical("return_sequences", [False]),
-            "activation": trial.suggest_categorical("activation", ['tanh', 'sigmoid', 'relu']),
-            "dropout": trial.suggest_float("dropout", 0.1, 0.6, step=0.1),
-        }
-        return params
 
 
 class MdfSeqModel(MdfSeqBaseModel):
@@ -1004,6 +1055,7 @@ MODEL_CLASSES = [
     MdfLasso,
     MdfXgb,
     MdfLgbm,
+    MdfCnn,
     MdfGru,
     MdfLstm,
     MdfTransformer,
