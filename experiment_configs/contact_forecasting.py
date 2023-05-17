@@ -24,15 +24,15 @@ from sklearn.preprocessing import OneHotEncoder
 
 import constants
 from util import utility_functions as uf
-from projects.e2e import data
+from projects.contact_forecasting import support_functions as sf
 
 EXPERIMENT_ID = uuid.uuid4()
 
-TARGET_COL = 'units'
-DATE_COL = 'date'
-PREPROCESSING_FUNCTION = None
-TRAIN_VAL_SPLIT_DATE = '2022-10-01'
-VAL_TEST_SPLIT_DATE = '2023-01-01'
+TARGET_COL = 'presentedVolume'
+DATE_COL = 'presentedDate'
+PREPROCESSING_FUNCTION = sf.preprocessing
+TRAIN_VAL_SPLIT_DATE = '2023-06-01'
+VAL_TEST_SPLIT_DATE = '2023-06-01'
 CATEGORICAL_ENGINEERED_FEATURES = ['day', 'month']
 MODELS_TO_TRAIN = [
     constants.RIDGE_NAME, constants.LASSO_NAME, constants.ELASTICNET_NAME,
@@ -45,7 +45,7 @@ MODELS_TO_TRAIN = [
 EVALUATION_METRIC_TO_USE = None
 PREDICTION_NAME = 'prediction'
 
-DATA_LOADING_FUNCTION = data.get_data
+DATA_LOADING_FUNCTION = sf.get_raw_data
 
 MISSING_VALUE_THRESHOLD = None
 
@@ -54,6 +54,14 @@ TIMESERIES_INTERVAL_UNIT = 'day'
 TIMESERIES_TARGET_FILL_GAP_VALUE = 0
 
 GENERATE_EDA_PLOTS = True
+
+IMPUTING_VAL_DICT = {
+    TARGET_COL: 0,
+    'numOrdersTotal': 0,
+    'fracNewCustomerOrders': -1,
+    'usHoliday': 'None',
+    'canadaHoliday': 'None',
+}
 
 # default outlier method
 # Can be one of them:

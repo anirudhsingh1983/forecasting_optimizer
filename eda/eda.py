@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 from sklearn.ensemble import IsolationForest
+from datetime import date, time, datetime
 
 import constants
 import experiment_settings
@@ -66,8 +67,20 @@ def _generate_plots(data):
     exo_vars = data.drop(columns=TARGET_COL).columns
     exo_data = data[exo_vars]
 
+    try:
+        imputing_val_dict = experiment_constants.IMPUTING_VAL_DICT
+    except:
+        logging.warning(f"No imputing value dictionary in the experiment setting. So, the framework's default imputing values will be used.")
+        imputing_val_dict = dict()
+
     # plot target
+    try:
+        imputing_value = imputing_val_dict[TARGET_COL]
+    except:
+        imputing_value = framework_settings.DEFAULT_CONTINUOUS_MISSING_IMPUTATION_VALUE
+    target.loc[target.isna()] = imputing_value
     plt.plot(target, label=constants.TARGET_NAME)
+    plt.xticks(rotation=90)
     plt.legend()
     plt.show()
 
@@ -77,12 +90,34 @@ def _generate_plots(data):
         exo_categorical = exo_data.select_dtypes(exclude=np.number)
 
         for col in exo_continuous.columns:
+            try:
+                imputing_value = imputing_val_dict[col]
+            except:
+                imputing_value = framework_settings.DEFAULT_CONTINUOUS_MISSING_IMPUTATION_VALUE
+
+            exo_continuous.loc[exo_continuous[col].isna(), col] = imputing_value
+
             plt.plot(exo_continuous[col], label=f"{col}")
+            plt.xticks(rotation=90)
+            plt.legend()
             plt.show()
 
         for col in exo_categorical.columns:
-            plt.hist(exo_categorical[col], label=f"{col}")
-            plt.show()
+            try:
+                imputing_value = imputing_val_dict[col]
+            except:
+                imputing_value = framework_settings.DEFAULT_CATEGORICAL_MISSING_IMPUTATION_VALUE
+
+            exo_categorical.loc[exo_categorical[col].isna(), col] = imputing_value
+
+            types = [date, time, datetime]
+            if type(exo_categorical[col].iloc[0]) in types:
+                continue # skip plotting dates. Newer versions of matplotlib do not allow non-timestamp values in timestamps even if the timestamps are converted to string. To avoid this issue, dates are being avoided while plotting.
+            else:
+                plt.hist(exo_categorical[col], label=f"{col}")
+                plt.legend()
+                plt.xticks(rotation=90)
+                plt.show()
 
 
 def _calculate_missing_values(data):
@@ -121,10 +156,11 @@ def _identify_outliers(data):
 
 def execute_eda(experiment_id, data, plots=True):
     data = _fill_timeseries_gaps(data)
+    mv, mv_high = _calculate_missing_values(data=data)
     if plots:
         _generate_plots(data=data)
-    mv, mv_high = _calculate_missing_values(data=data)
     is_stationary = _check_target_stationarity(data)
-    data_norm, data_ol = _identify_outliers(data)
+    # data_norm, data_ol = _identify_outliers(data)
     uf.save_df(data, experiment_id, name=f"{constants.EDA_NAME}")
-    return data, mv, mv_high, is_stationary, data_norm, data_ol
+    # return data, mv, mv_high, is_stationary, data_norm, data_ol
+    return data, mv, mv_high, is_stationary

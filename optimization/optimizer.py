@@ -98,7 +98,14 @@ class Optimizer():
 
     def get_data(self):
         data = data_landing.execute_data_landing(experiment_id=self.experiment_id, data_loading_function=self.data_loading_function)
-        data, mv, mv_high, is_stationary, data_norm, data_ol = eda.execute_eda(experiment_id=self.experiment_id, data=data, plots=False)
+
+        try:
+            generate_eda_plots = experiment_constants.GENERATE_EDA_PLOTS
+        except:
+            generate_eda_plots = False
+
+        # data, mv, mv_high, is_stationary, data_norm, data_ol = eda.execute_eda(experiment_id=self.experiment_id, data=data, plots=generate_eda_plots)
+        data, mv, mv_high, is_stationary = eda.execute_eda(experiment_id=self.experiment_id, data=data, plots=generate_eda_plots)
         return data
 
     def run_pipeline(
