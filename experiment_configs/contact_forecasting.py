@@ -36,12 +36,12 @@ VAL_TEST_SPLIT_DATE = '2023-06-01'
 CATEGORICAL_ENGINEERED_FEATURES = ['day', 'month']
 MODELS_TO_TRAIN = [
     constants.RIDGE_NAME, constants.LASSO_NAME, constants.ELASTICNET_NAME,
-    constants.LINEARREGRESSION_NAME, constants.XGB_NAME, constants.LSTM_NAME, constants.GRU_NAME,
+    constants.LINEARREGRESSION_NAME, constants.XGB_NAME, constants.LSTM_NAME, constants.GRU_NAME, constants.CNN_NAME,
     # constants.SARIMAX_NAME
 ]
-MODELS_TO_TRAIN = [
-    constants.CNN_NAME
-]
+# MODELS_TO_TRAIN = [
+#     constants.CNN_NAME
+# ]
 EVALUATION_METRIC_TO_USE = None
 PREDICTION_NAME = 'prediction'
 
@@ -53,7 +53,7 @@ TIMESERIES_INTERVAL_VALUE = 1
 TIMESERIES_INTERVAL_UNIT = 'day'
 TIMESERIES_TARGET_FILL_GAP_VALUE = 0
 
-GENERATE_EDA_PLOTS = True
+GENERATE_EDA_PLOTS = False
 
 IMPUTING_VAL_DICT = {
     TARGET_COL: 0,
@@ -69,7 +69,7 @@ IMPUTING_VAL_DICT = {
 # - 'zscore'
 # - 'svmoneclass'
 # - 'isolationforest'
-OUTLIER_METHODS = ['isolationforest']
+OUTLIER_METHODS = [None, 'isolationforest']
 REMOVE_OUTLIERS = False
 
 
@@ -82,6 +82,7 @@ FEATURE_ENGINEERING_SCALER = None
 
 CV_FOLDS = 5
 TIMESERIES_CV = True
+TIMESERIES_CV_EQUAL_SETS = False
 TIMESERIES_CV_APPROACH = None
 
 # TIMESERIES_CV_WINDOW = None
@@ -117,7 +118,7 @@ SEQ_STRIDE = 1
 SEQ_SAMPLING = 1
 
 TUNE_USING_OPTUNA = True
-NUM_OPTUNA_TRIALS = 100
+NUM_OPTUNA_TRIALS = 2
 CNN_EPOCHS = 50
 GRU_EPOCHS = 20
 LSTM_EPOCHS = 20
@@ -125,4 +126,4 @@ MAX_SEQUENTIAL_NN_LAYERS = 3
 MAX_CNN_LAYERS = 3
 MAX_CNN_FILTERS = 5
 
-DATASET_FOR_PERFORMANCE_OPTIMIZATION = constants.VAL_NAME  # possible values are: [constants.VAL_NAME, constants.TEST_NAME]
+DATASET_FOR_PERFORMANCE_OPTIMIZATION = constants.TRAIN_NAME  # possible values are: [constants.TRAIN_NAME, constants.VAL_NAME, constants.TEST_NAME]

@@ -83,8 +83,10 @@ class DataPreprocessing():
     def _treat_missing_values(self):
         self.imputer.fit(self.train)
         self.train = pd.DataFrame(data=self.imputer.transform(self.train), index=self.train.index, columns=self.train.columns)
-        self.val = pd.DataFrame(data=self.imputer.transform(self.val), index=self.val.index, columns=self.val.columns)
-        self.test = pd.DataFrame(data=self.imputer.transform(self.test), index=self.test.index, columns=self.test.columns)
+        if len(self.val) > 0:
+            self.val = pd.DataFrame(data=self.imputer.transform(self.val), index=self.val.index, columns=self.val.columns)
+        if len(self.test) > 0:
+            self.test = pd.DataFrame(data=self.imputer.transform(self.test), index=self.test.index, columns=self.test.columns)
 
 
     def execute_preprocessing(self):

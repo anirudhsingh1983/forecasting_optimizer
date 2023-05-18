@@ -101,21 +101,31 @@ class FeatureEngineering():
         encoded_columns = [[f"{col}_{val}" for val in list(encoded_values)] for col, encoded_values in
                            encoded_columns.items()]
         encoded_columns = np.concatenate(encoded_columns)
+
         train_encoded = pd.DataFrame(
             data=encoder.transform(train[categorical_features]).toarray(),
             index=train.index,
             columns=encoded_columns,
         )
-        val_encoded = pd.DataFrame(
-            data=encoder.transform(val[categorical_features]).toarray(),
-            index=val.index,
-            columns=encoded_columns,
-        )
-        test_encoded = pd.DataFrame(
-            data=encoder.transform(test[categorical_features]).toarray(),
-            index=test.index,
-            columns=encoded_columns,
-        )
+
+        if len(self.val) > 0:
+            val_encoded = pd.DataFrame(
+                data=encoder.transform(val[categorical_features]).toarray(),
+                index=val.index,
+                columns=encoded_columns,
+            )
+        else:
+            val_encoded = pd.DataFrame(columns=train_encoded.columns)
+
+        if len(self.test) > 0:
+            test_encoded = pd.DataFrame(
+                data=encoder.transform(test[categorical_features]).toarray(),
+                index=test.index,
+                columns=encoded_columns,
+            )
+        else:
+            test_encoded = pd.DataFrame(columns=train_encoded.columns)
+
         self.train = pd.concat([train.drop(columns=categorical_features), train_encoded], axis=1)
         self.val = pd.concat([val.drop(columns=categorical_features), val_encoded], axis=1)
         self.test = pd.concat([test.drop(columns=categorical_features), test_encoded], axis=1)
@@ -129,16 +139,18 @@ class FeatureEngineering():
             index=self.train.index,
             columns=self.train.columns,
         )
-        self.val = pd.DataFrame(
-            data=scaler.transform(self.val),
-            index=self.val.index,
-            columns=self.val.columns,
-        )
-        self.test = pd.DataFrame(
-            data=scaler.transform(self.test),
-            index=self.test.index,
-            columns=self.test.columns,
-        )
+        if len(self.val) > 0:
+            self.val = pd.DataFrame(
+                data=scaler.transform(self.val),
+                index=self.val.index,
+                columns=self.val.columns,
+            )
+        if len(self.test) > 0:
+            self.test = pd.DataFrame(
+                data=scaler.transform(self.test),
+                index=self.test.index,
+                columns=self.test.columns,
+            )
 
     def _identify_isolation_forest_outliers(self, data, clf, data_name='data'):
         y_pred = clf.predict(data)
@@ -166,8 +178,9 @@ class FeatureEngineering():
             seq_sampling = framework_settings.DEFAULT_SEQ_SAMPLING
 
 
-
-        if self.outlier_method == constants.OUTLIER_METHOD_BOXPLOT_NAME:
+        if self.outlier_method is None:
+            pass
+        elif self.outlier_method == constants.OUTLIER_METHOD_BOXPLOT_NAME:
             pass
         elif self.outlier_method == constants.OUTLIER_METHOD_ZSCORE_NAME:
             pass

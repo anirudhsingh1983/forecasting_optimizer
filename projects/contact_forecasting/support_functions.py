@@ -22,7 +22,7 @@ warnings.filterwarnings("ignore")
 _bqclient = bigquery.Client(project='wf-gcp-us-ae-dsservice-prod')
 _bqstorageclient = bigquery_storage.BigQueryReadClient()
 
-y_var = "tot_call_vol"
+y_var = "presentedVolume"
 x_var = ["exp_mov_avg",
          "exp_ma_orders",
          "tot_na_fcst",
@@ -96,7 +96,8 @@ def get_raw_data():
     return df_raw
 
 def preprocessing(trial, df_raw):
-    df_raw.columns = ["week", "date", "tot_call_vol", "cnt_orders",
+    df_raw = df_raw.copy()
+    df_raw.columns = ["week", "date", "presentedVolume", "cnt_orders",
                       "perc_new_cust_orders", "holiday_us", "holiday_ca"]
     print(df_raw.tail())
 
@@ -201,7 +202,7 @@ def preprocessing(trial, df_raw):
     df_hol = df_raw.groupby(by=['week'])[holidayCols].sum().reset_index()
 
     df_feat = reduce(lambda x, y: pd.merge(x, y, on="week", how="inner"),
-                     [est_current_week_val(df_raw, "tot_call_vol"),
+                     [est_current_week_val(df_raw, "presentedVolume"),
                       df_fcst,
                       est_current_week_val(df_raw, "cnt_orders")])
     df_feat.tail()
@@ -213,8 +214,8 @@ def preprocessing(trial, df_raw):
     df_ip.tail()
 
     # Expected moving average
-    df_ip["exp_mov_avg"] = df_ip["tot_call_vol"].rolling(window=2).sum().shift(1) \
-                           + df_ip["est_tot_call_vol"]
+    df_ip["exp_mov_avg"] = df_ip["presentedVolume"].rolling(window=2).sum().shift(1) \
+                           + df_ip["est_presentedVolume"]
     df_ip["exp_mov_avg"] = df_ip["exp_mov_avg"].shift(1) / 3
 
     # Expected moving average of orders
@@ -223,7 +224,7 @@ def preprocessing(trial, df_raw):
     df_ip["exp_ma_orders"] = df_ip["exp_ma_orders"].shift(1) / 3
 
     # Expected call volume lag1
-    df_ip["exp_tot_call_vol_lag1"] = df_ip["est_tot_call_vol"].shift(1)
+    df_ip["exp_tot_call_vol_lag1"] = df_ip["est_presentedVolume"].shift(1)
 
     # Expected count of orders
     df_ip["exp_cnt_orders_lag1"] = df_ip["est_cnt_orders"].shift(1)
@@ -240,7 +241,8 @@ def preprocessing(trial, df_raw):
     df_ip["tot_na_fcst"] = df_ip["tot_na_fcst"] ** 3
 
     df_ip = df_ip[coln].dropna().reset_index(drop=True)
-    df_ip.index = df_ip['week'].drop(column = ['week'])
+    df_ip.index = df_ip['week']
+    df_ip = df_ip.drop(columns = ['week'])
     return df_ip
 
 

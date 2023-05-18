@@ -160,6 +160,8 @@ class Optimizer():
                 model_to_train,
             )
             result = result[self.dataset_for_performance_optimization]
+            if result is None:
+                logging.error(f"The error on the selected dataset is None or undefined. Either check if the dataset selected for optimization is not empty or if it is not smaller than parameter SEQ_DATA_LEN (or its default value DEFAULT_SEQ_DATA_LEN if SEQ_DATA_LEN is not defined.)")
             return result
 
         return objective

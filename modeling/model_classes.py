@@ -43,6 +43,13 @@ except:
     TIMESERIES_USE_CV = framework_settings.DEFAULT_USE_TIMESERIES_CV
 
 try:
+    TIMESERIES_CV_EQUAL_SETS = experiment_constants.TIMESERIES_CV_EQUAL_SETS
+    if TIMESERIES_CV_EQUAL_SETS is None:
+        TIMESERIES_CV_EQUAL_SETS = framework_settings.DEFAULT_TIMESERIES_CV_EQUAL_SETS
+except:
+    TIMESERIES_CV_EQUAL_SETS = framework_settings.DEFAULT_TIMESERIES_CV_EQUAL_SETS
+
+try:
     TIMESERIES_CV_APPROACH = experiment_constants.TIMESERIES_CV_APPROACH
     if TIMESERIES_CV_APPROACH is None:
         TIMESERIES_CV_APPROACH = framework_settings.DEFAULT_TIMESERIES_CV_APPROACH
@@ -201,19 +208,39 @@ class MdfBaseModel(ABC):
     def evaluate(self):
         train, val, test, x_train, y_train, x_val, y_val, x_test, y_test = self.datasets
         y_train_predict = self.predict(x_train)
-        y_val_predict = self.predict(x_val)
-        y_test_predict = self.predict(x_test)
-        train_targtes = pd.DataFrame(
+
+        if len(x_val) > 0:
+            y_val_predict = self.predict(x_val)
+        if len(x_test) > 0:
+            y_test_predict = self.predict(x_test)
+
+        train_targets = pd.DataFrame(
             {'actuals': np.array(y_train).squeeze(), 'predicted': np.array(y_train_predict).squeeze()})
-        val_targtes = pd.DataFrame(
-            {'actuals': np.array(y_val).squeeze(), 'predicted': np.array(y_val_predict).squeeze()})
-        test_targtes = pd.DataFrame(
-            {'actuals': np.array(y_test).squeeze(), 'predicted': np.array(y_test_predict).squeeze()})
-        self.save_model_outputs(data=(train_targtes, val_targtes, test_targtes))
+
+        if len(x_val) > 0:
+            val_targets = pd.DataFrame(
+                {'actuals': np.array(y_val).squeeze(), 'predicted': np.array(y_val_predict).squeeze()})
+        else:
+            val_targets = pd.DataFrame(columns = train_targets.columns)
+
+        if len(x_test) > 0:
+            test_targets = pd.DataFrame(
+                {'actuals': np.array(y_test).squeeze(), 'predicted': np.array(y_test_predict).squeeze()})
+        else:
+            test_targets = pd.DataFrame(columns=train_targets.columns)
+
+        self.save_model_outputs(data=(train_targets, val_targets, test_targets))
 
         train_metric = self.scorer._score_func(y_train, y_train_predict)
-        val_metric = self.scorer._score_func(y_val, y_val_predict)
-        test_metric = self.scorer._score_func(y_test, y_test_predict)
+        if len(y_val) > 0:
+            val_metric = self.scorer._score_func(y_val, y_val_predict)
+        else:
+            val_metric = None
+        if len(y_test) > 0:
+            test_metric = self.scorer._score_func(y_test, y_test_predict)
+        else:
+            test_metric = None
+
         return train_metric, val_metric, test_metric
 
 
@@ -337,18 +364,38 @@ class MdfCsBaseModel(MdfBaseModel):
         forecasting_horizon = FORECASTING_HORIZON if FORECASTING_HORIZON is not None else default_forecasting_horizon
 
         if TUNE_USING_OPTUNA:
-            if TIMESERIES_CV_APPROACH == constants.SLIDING_WINDOW_NAME:
-                cv = TimeSeriesSplit(
-                    n_splits=CV_FOLDS,
-                    max_train_size=timeseries_cv_window,
-                )
-            elif TIMESERIES_CV_APPROACH == constants.EXPANDING_WINDOW_NAME:
-                cv = TimeSeriesSplit(
-                    n_splits=CV_FOLDS,
-                    max_train_size=None,  # this will make the splits use expanding window
-                )
+            if TIMESERIES_CV_EQUAL_SETS:
+                if TIMESERIES_CV_APPROACH == constants.SLIDING_WINDOW_NAME:
+                    cv = TimeSeriesSplit(
+                        n_splits=CV_FOLDS,
+                        max_train_size=timeseries_cv_window,
+                    )
+                elif TIMESERIES_CV_APPROACH == constants.EXPANDING_WINDOW_NAME:
+                    cv = TimeSeriesSplit(
+                        n_splits=CV_FOLDS,
+                        max_train_size=None,  # this will make the splits use expanding window
+                    )
+                else:
+                    logging.error("Invalid timeseries CV approach")
             else:
-                logging.error("Invalid timeseries CV approach")
+                if TIMESERIES_CV_APPROACH == constants.SLIDING_WINDOW_NAME:
+                    cv = SlidingWindowSplitter(
+                        fh=forecasting_horizon,
+                        window_length=timeseries_cv_window,
+                        step_length=timeseries_cv_step,
+                        start_with_window=True,
+                    )
+                elif TIMESERIES_CV_APPROACH == constants.EXPANDING_WINDOW_NAME:
+                    cv = ExpandingWindowSplitter(
+                        fh=forecasting_horizon,
+                        initial_window=timeseries_cv_window,
+                        step_length=timeseries_cv_step,
+                    )
+                else:
+                    logging.error("Invalid timeseries CV approach")
+
+            cv = list(cv.split(data))
+
 
             objective = self.get_optuna_cs_objective(
                 estimator=model,
@@ -417,9 +464,16 @@ class MdfSeqBaseModel(MdfBaseModel):
         x_test, y_test = self.split_xy(test)
         x_train, y_train = uf.cs_to_seq(x_train, y_train, length=SEQ_DATA_LEN, sampling_rate=SEQ_SAMPLING,
                                         stride=SEQ_STRIDE)
-        x_val, y_val = uf.cs_to_seq(x_val, y_val, length=SEQ_DATA_LEN, sampling_rate=SEQ_SAMPLING, stride=SEQ_STRIDE)
-        x_test, y_test = uf.cs_to_seq(x_test, y_test, length=SEQ_DATA_LEN, sampling_rate=SEQ_SAMPLING,
-                                      stride=SEQ_STRIDE)
+        if len(x_val)> 0:
+            x_val, y_val = uf.cs_to_seq(x_val, y_val, length=SEQ_DATA_LEN, sampling_rate=SEQ_SAMPLING, stride=SEQ_STRIDE)
+        else:
+            x_val, y_val = np.empty(shape=[0,0,0]), np.empty(shape=[0])
+
+        if len(x_test) > 0:
+            x_test, y_test = uf.cs_to_seq(x_test, y_test, length=SEQ_DATA_LEN, sampling_rate=SEQ_SAMPLING,
+                                          stride=SEQ_STRIDE)
+        else:
+            x_test, y_test = np.empty(shape=[0,0,0]), np.empty(shape=[0])
 
         return train, val, test, x_train, y_train, x_val, y_val, x_test, y_test
 
