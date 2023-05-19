@@ -34,12 +34,12 @@ GRU_NAME = 'gru'
 LSTM_NAME = 'lstm'
 TRANSFORMER_NAME = 'transformer'
 BERT_NAME = 'bert'
-RMSE_NAME = 'rmse'
-MSE_NAME = 'mse'
-MAE_NAME = 'mae'
+
+MSE_NAME = 'neg_mean_squared_error'
+MAE_NAME = 'neg_mean_absolute_error'
 WAPE_NAME = 'wape'
-MAPE_NAME = 'mape'
-NEG_MSE_NAME = 'neg_mean_squared_error'
+MAPE_NAME = 'neg_mean_absolute_percentage_error'
+
 MODEL_PERFORMANCE_RESULT_NAME = 'model_performances'
 
 OUTLIER_METHOD_BOXPLOT_NAME = 'boxplot'
@@ -57,3 +57,6 @@ OUTLIER_METHODS = [
 
 # Utility functions constants
 ACTUAL_DISTRIBUTION_STR = 'actual_dist'
+
+OPTUNA_MINIMIZE_DIRECTION = 'minimize'
+OPTUNA_MAXIMIZE_DIRECTION = 'maximize'

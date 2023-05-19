@@ -44,15 +44,12 @@ TRAIN_VAL_SPLIT_DATE = experiment_constants.TRAIN_VAL_SPLIT_DATE
 VAL_TEST_SPLIT_DATE = experiment_constants.VAL_TEST_SPLIT_DATE
 
 # evaluation
-RMSE_NAME = constants.RMSE_NAME
 MSE_NAME = constants.MSE_NAME
 MAE_NAME = constants.MAE_NAME
 WAPE_NAME = constants.WAPE_NAME
 MAPE_NAME = constants.MAPE_NAME
-NEG_MSE_NAME = constants.NEG_MSE_NAME
 
 EVALUATION_METRIC_NAMES = [
-    RMSE_NAME,
     MSE_NAME,
     MAE_NAME,
     WAPE_NAME,

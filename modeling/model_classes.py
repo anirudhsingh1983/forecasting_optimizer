@@ -97,7 +97,7 @@ except:
 
 try:
     EVALUATION_METRIC_TO_USE = experiment_constants.EVALUATION_METRIC_TO_USE
-    if EVALUATION_METRIC_TO_USE is None:
+    if (EVALUATION_METRIC_TO_USE is None) | (EVALUATION_METRIC_TO_USE not in modeling_constants.EVALUATION_METRIC_NAMES):
         EVALUATION_METRIC_TO_USE = framework_settings.DEFAULT_EVALUATION_METRIC_TO_USE
 except:
     EVALUATION_METRIC_TO_USE = framework_settings.DEFAULT_EVALUATION_METRIC_TO_USE
@@ -171,6 +171,54 @@ class MdfBaseModel(ABC):
         y = data[self.target_col_name]
         return x, y
 
+    def get_cv_attributes(self, data):
+        default_timeseries_cv_window = len(data) // (CV_FOLDS + 1)
+        default_timeseries_cv_step = len(data) // (CV_FOLDS + 1)
+        default_forecasting_horizon = np.arange(1, default_timeseries_cv_window + 1)
+        timeseries_cv_window = TIMESERIES_CV_WINDOW if TIMESERIES_CV_WINDOW is not None else default_timeseries_cv_window
+        timeseries_cv_step = TIMESERIES_CV_STEP if TIMESERIES_CV_STEP is not None else default_timeseries_cv_step
+        forecasting_horizon = FORECASTING_HORIZON if FORECASTING_HORIZON is not None else default_forecasting_horizon
+        return forecasting_horizon, timeseries_cv_step, timeseries_cv_window
+
+    def get_cv(self, timeseries_cv_equal_sets, data, seq_data=False):
+        forecasting_horizon, timeseries_cv_step, timeseries_cv_window = self.get_cv_attributes(data)
+
+        if seq_data:
+            timeseries_cv_window = timeseries_cv_window - SEQ_DATA_LEN
+
+        if timeseries_cv_equal_sets:
+            if TIMESERIES_CV_APPROACH == constants.SLIDING_WINDOW_NAME:
+                cv = TimeSeriesSplit(
+                    n_splits=CV_FOLDS,
+                    max_train_size=timeseries_cv_window,
+                )
+            elif TIMESERIES_CV_APPROACH == constants.EXPANDING_WINDOW_NAME:
+                cv = TimeSeriesSplit(
+                    n_splits=CV_FOLDS,
+                    max_train_size=None,  # this will make the splits use expanding window
+                )
+            else:
+                logging.error("Invalid timeseries CV approach")
+        else:
+            if TIMESERIES_CV_APPROACH == constants.SLIDING_WINDOW_NAME:
+                cv = SlidingWindowSplitter(
+                    fh=forecasting_horizon,
+                    window_length=timeseries_cv_window,
+                    step_length=timeseries_cv_step,
+                    start_with_window=True,
+                )
+            elif TIMESERIES_CV_APPROACH == constants.EXPANDING_WINDOW_NAME:
+                cv = ExpandingWindowSplitter(
+                    fh=forecasting_horizon,
+                    initial_window=timeseries_cv_window,
+                    step_length=timeseries_cv_step,
+                )
+            else:
+                logging.error("Invalid timeseries CV approach")
+
+        cv = list(cv.split(data))
+        return cv
+
     def save_model_outputs(self, data):
         train, val, test = data
         uf.save_df(train, self.experiment_id, name=f"{constants.MODELING_NAME}_{constants.TRAIN_NAME}")
@@ -188,7 +236,7 @@ class MdfBaseModel(ABC):
 
         return scorer
 
-    def tune_with_optuna(self, objective, direction='minimize', n_trials=100):
+    def tune_with_optuna(self, objective, direction=constants.OPTUNA_MINIMIZE_DIRECTION, n_trials=100):
         study = optuna.create_study(direction=direction)
         study.optimize(objective, n_trials=n_trials)
         logging.info(f"Optimized {self.metric}: {study.best_value:.5f}")
@@ -263,25 +311,11 @@ class MdfTsBaseModel(MdfBaseModel):
 
     def ts_train_with_timeseries_cv(self, estimator_class, param_grid):
         data, _, _, x, y, _, _, _, _ = self.datasets
-        default_timeseries_cv_window = len(x) // (CV_FOLDS + 1)
-        timeseries_cv_window = TIMESERIES_CV_WINDOW if TIMESERIES_CV_WINDOW is not None else default_timeseries_cv_window
-
-        if TIMESERIES_CV_APPROACH == constants.SLIDING_WINDOW_NAME:
-            cv = TimeSeriesSplit(
-                n_splits=CV_FOLDS,
-                max_train_size=timeseries_cv_window,
-            )
-        elif TIMESERIES_CV_APPROACH == constants.EXPANDING_WINDOW_NAME:
-            cv = TimeSeriesSplit(
-                n_splits=CV_FOLDS,
-                max_train_size=None,  # this will make the splits use expanding window
-            )
-        else:
-            logging.error("Invalid timeseries CV approach")
+        cv = self.get_cv(timeseries_cv_equal_sets=TIMESERIES_CV_EQUAL_SETS, data=data)
 
         if TUNE_USING_OPTUNA:
             objective = self.get_optuna_model_objective(X=x, y=y, cv=cv)
-            study = self.tune_with_optuna(objective, n_trials=NUM_OPTUNA_TRIALS)
+            study = self.tune_with_optuna(objective, direction=constants.OPTUNA_MINIMIZE_DIRECTION, n_trials=NUM_OPTUNA_TRIALS)
             estimator_obj = estimator_class(y=y, X=x, **study.best_params)
             estimator_obj = estimator_obj.fit(y=y, X=x)
             return estimator_obj, study.best_params
@@ -291,7 +325,7 @@ class MdfTsBaseModel(MdfBaseModel):
             results = []
             for params in param_grid:
                 scores = []
-                for train_index, test_index in cv.split(x):
+                for train_index, test_index in cv:
                     train_x = x.iloc[train_index]
                     train_y = y.iloc[train_index]
                     test_x = x.iloc[test_index]
@@ -332,7 +366,7 @@ class MdfCsBaseModel(MdfBaseModel):
                 scoring=scoring,
                 n_jobs=-1
             )
-            mean_score = scores["test_score"].mean()
+            mean_score = -scores["test_score"].mean() # a -ve sign is added because the scores are negative values of the loss in the chosen errors. With this, a higher score will not be desirable aligning with minimization objective.
             return mean_score
 
         return objective
@@ -355,47 +389,9 @@ class MdfCsBaseModel(MdfBaseModel):
 
     def cs_train_with_timeseries_cv(self, model, param_grid):
         data, _, _, x, y, _, _, _, _ = self.datasets
-        default_timeseries_cv_window = len(x) // (CV_FOLDS + 1)
-        default_timeseries_cv_step = len(x) // (CV_FOLDS + 1)
-        default_forecasting_horizon = np.arange(1, default_timeseries_cv_window + 1)
-
-        timeseries_cv_window = TIMESERIES_CV_WINDOW if TIMESERIES_CV_WINDOW is not None else default_timeseries_cv_window
-        timeseries_cv_step = TIMESERIES_CV_STEP if TIMESERIES_CV_STEP is not None else default_timeseries_cv_step
-        forecasting_horizon = FORECASTING_HORIZON if FORECASTING_HORIZON is not None else default_forecasting_horizon
 
         if TUNE_USING_OPTUNA:
-            if TIMESERIES_CV_EQUAL_SETS:
-                if TIMESERIES_CV_APPROACH == constants.SLIDING_WINDOW_NAME:
-                    cv = TimeSeriesSplit(
-                        n_splits=CV_FOLDS,
-                        max_train_size=timeseries_cv_window,
-                    )
-                elif TIMESERIES_CV_APPROACH == constants.EXPANDING_WINDOW_NAME:
-                    cv = TimeSeriesSplit(
-                        n_splits=CV_FOLDS,
-                        max_train_size=None,  # this will make the splits use expanding window
-                    )
-                else:
-                    logging.error("Invalid timeseries CV approach")
-            else:
-                if TIMESERIES_CV_APPROACH == constants.SLIDING_WINDOW_NAME:
-                    cv = SlidingWindowSplitter(
-                        fh=forecasting_horizon,
-                        window_length=timeseries_cv_window,
-                        step_length=timeseries_cv_step,
-                        start_with_window=True,
-                    )
-                elif TIMESERIES_CV_APPROACH == constants.EXPANDING_WINDOW_NAME:
-                    cv = ExpandingWindowSplitter(
-                        fh=forecasting_horizon,
-                        initial_window=timeseries_cv_window,
-                        step_length=timeseries_cv_step,
-                    )
-                else:
-                    logging.error("Invalid timeseries CV approach")
-
-            cv = list(cv.split(data))
-
+            cv = self.get_cv(timeseries_cv_equal_sets=TIMESERIES_CV_EQUAL_SETS, data=data)
 
             objective = self.get_optuna_cs_objective(
                 estimator=model,
@@ -405,26 +401,12 @@ class MdfCsBaseModel(MdfBaseModel):
                 cv=cv,
                 scoring=self.metric,
             )
-            study = self.tune_with_optuna(objective, n_trials=NUM_OPTUNA_TRIALS)
+            study = self.tune_with_optuna(objective, direction=constants.OPTUNA_MINIMIZE_DIRECTION, n_trials=NUM_OPTUNA_TRIALS)
             model = model.set_params(**study.best_params)
             model = model.fit(y=y, X=x)
             return model, study.best_params
         else:
-            if TIMESERIES_CV_APPROACH == constants.SLIDING_WINDOW_NAME:
-                cv = SlidingWindowSplitter(
-                    fh=forecasting_horizon,
-                    window_length=timeseries_cv_window,
-                    step_length=timeseries_cv_step,
-                    start_with_window=True,
-                )
-            elif TIMESERIES_CV_APPROACH == constants.EXPANDING_WINDOW_NAME:
-                cv = ExpandingWindowSplitter(
-                    fh=forecasting_horizon,
-                    initial_window=timeseries_cv_window,
-                    step_length=timeseries_cv_step,
-                )
-            else:
-                logging.error("Invalid timeseries CV approach")
+            cv = self.get_cv(timeseries_cv_equal_sets=False, data=data)
 
             if USE_SKTIME:
                 gscv = ForecastingGridSearchCV(
@@ -455,6 +437,12 @@ class MdfCsBaseModel(MdfBaseModel):
 class MdfSeqBaseModel(MdfBaseModel):
     def __init__(self, data, target_col_name, experiment_id):
         super().__init__(data, target_col_name, experiment_id)
+        self.loss_mappings = {
+            modeling_constants.MSE_NAME: tf.keras.metrics.mean_squared_error,
+            modeling_constants.MAE_NAME: tf.keras.metrics.mean_absolute_error,
+            modeling_constants.MAPE_NAME: tf.keras.metrics.mean_absolute_percentage_error,
+            modeling_constants.WAPE_NAME: tf.keras.metrics.mean_squared_error, # mapping WAPE to MSE because TF doesn't have any loss function for WAPE. In future improvements, we can create a custom TF loss for WAPE.
+        }
         self.model_class = None  # abstract
 
     def get_seq_datasets(self):
@@ -506,13 +494,14 @@ class MdfSeqBaseModel(MdfBaseModel):
             optimizer = tf.keras.optimizers.Adam(**optimizer_args)
 
             scores = []
-            for train_index, test_index in cv.split(X):
+            tf_loss = self.loss_mappings[self.metric]
+            for train_index, test_index in cv:
                 train_x = X[train_index]
                 train_y = y[train_index]
                 test_x = X[test_index]
                 test_y = y[test_index]
                 model = self.get_model_object(trial)
-                model.compile(optimizer=optimizer, loss='mse', metrics=['mse'])
+                model.compile(optimizer=optimizer, loss=tf_loss, metrics=[tf_loss])
                 model.fit(train_x, train_y, epochs=self.training_epochs)
                 score = model.evaluate(test_x, test_y)[0]
                 scores.append(score)
@@ -524,23 +513,25 @@ class MdfSeqBaseModel(MdfBaseModel):
     def seq_train_with_timeseries_cv(self, param_grid):
         _, _, _, x_train, y_train, x_val, y_val, _, _ = self.datasets
 
-        if TIMESERIES_CV_APPROACH == constants.SLIDING_WINDOW_NAME:
-            cv = TimeSeriesSplit(
-                n_splits=CV_FOLDS,
-                max_train_size=TIMESERIES_CV_WINDOW,
-            )
-        elif TIMESERIES_CV_APPROACH == constants.EXPANDING_WINDOW_NAME:
-            cv = TimeSeriesSplit(
-                n_splits=CV_FOLDS,
-                max_train_size=None,  # this will make the splits use expanding window
-            )
-        else:
-            logging.error("Invalid timeseries CV approach")
+        cv = self.get_cv(timeseries_cv_equal_sets=TIMESERIES_CV_EQUAL_SETS, data= pd.Index(np.arange(0,len(x_train))), seq_data=True)
+
+        # if TIMESERIES_CV_APPROACH == constants.SLIDING_WINDOW_NAME:
+        #     cv = TimeSeriesSplit(
+        #         n_splits=CV_FOLDS,
+        #         max_train_size=TIMESERIES_CV_WINDOW,
+        #     )
+        # elif TIMESERIES_CV_APPROACH == constants.EXPANDING_WINDOW_NAME:
+        #     cv = TimeSeriesSplit(
+        #         n_splits=CV_FOLDS,
+        #         max_train_size=None,  # this will make the splits use expanding window
+        #     )
+        # else:
+        #     logging.error("Invalid timeseries CV approach")
 
         if TUNE_USING_OPTUNA:
             objective = self.get_optuna_seq_objective(get_model_params=self.get_optuna_params, X=x_train, y=y_train,
                                                       cv=cv)
-            study = self.tune_with_optuna(objective, n_trials=NUM_OPTUNA_TRIALS)
+            study = self.tune_with_optuna(objective, direction=constants.OPTUNA_MINIMIZE_DIRECTION, n_trials=NUM_OPTUNA_TRIALS)
             best_trial = study.best_trial
             best_params = study.best_params
             optimizer_params = self.get_optimizer_optuna_args(best_trial)
@@ -556,7 +547,8 @@ class MdfSeqBaseModel(MdfBaseModel):
             results = []
             for model_params in param_grid:
                 scores = []
-                for train_index, test_index in cv.split(x_train):
+                # for train_index, test_index in cv.split(x_train):
+                for train_index, test_index in cv:
                     train_x = x_train[train_index]
                     train_y = y_train[train_index]
                     test_x = x_train[test_index]
@@ -628,7 +620,8 @@ class MdfSarimax(MdfTsBaseModel):
         def objective(trial):
             params = self.get_optuna_params(trial)
             scores = []
-            for train_index, test_index in cv.split(X):
+            # for train_index, test_index in cv.split(X):
+            for train_index, test_index in cv:
                 train_x = X.iloc[train_index]
                 train_y = y.iloc[train_index]
                 test_x = X.iloc[test_index]
@@ -788,7 +781,7 @@ class MdfElasticNet(MdfCsBaseModel):
 
     def get_optuna_params(self, trial):
         params = {
-            "alpha": trial.suggest_float("alpha", 0, 4, step=0.1),
+            "alpha": trial.suggest_float("alpha", 0.1, 4, step=0.1),
             'l1_ratio': trial.suggest_float("l1_ratio", 0, 1, step=0.05),
             "fit_intercept": trial.suggest_categorical("fit_intercept", [True, False]),
         }
