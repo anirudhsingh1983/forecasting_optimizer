@@ -12,7 +12,7 @@ from lightgbm import LGBMRegressor
 from pmdarima.arima import auto_arima
 from sklearn.linear_model import Ridge, Lasso, LinearRegression, ElasticNet
 from sklearn.metrics import get_scorer, get_scorer_names
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, KFold
 from sklearn.model_selection import TimeSeriesSplit
 from sklearn.model_selection import cross_validate
 from sktime.forecasting.model_selection import (
@@ -141,6 +141,15 @@ try:
         MAX_SEQUENTIAL_NN_LAYERS = framework_settings.DEFAULT_MAX_SEQUENTIAL_NN_LAYERS
 except:
     MAX_SEQUENTIAL_NN_LAYERS = framework_settings.DEFAULT_MAX_SEQUENTIAL_NN_LAYERS
+
+RETRAIN_MODEL_ON_BEST_PARAMS = False # If False, the model will use the CV result on train set to be the train set performance.
+try:
+    RETRAIN_MODEL_ON_BEST_PARAMS = experiment_constants.RETRAIN_MODEL_ON_BEST_PARAMS
+    if RETRAIN_MODEL_ON_BEST_PARAMS is None:
+        RETRAIN_MODEL_ON_BEST_PARAMS = framework_settings.DEFAULT_RETRAIN_MODEL_ON_BEST_PARAMS
+except:
+    RETRAIN_MODEL_ON_BEST_PARAMS = framework_settings.DEFAULT_RETRAIN_MODEL_ON_BEST_PARAMS
+
 
 try:
     TUNE_USING_OPTUNA = experiment_constants.TUNE_USING_OPTUNA
@@ -382,10 +391,18 @@ class MdfCsBaseModel(MdfBaseModel):
         x, y = self.split_xy(data)
         gscv.fit(X=x, y=y)
         model = model.set_params(**gscv.best_params)
+        cv = KFold(n_splits=CV_FOLDS)
+        scores = cross_validate(
+            estimator=model,
+            X=x,
+            y=y,
+            cv=cv,
+            scoring=self.metric,
+            n_jobs=-1
+        )
+        best_params_cv_score = -scores["test_score"].mean()
         model = model.fit(y=y, X=x)
-        return model, gscv.best_params_
-
-        return gscv
+        return model, gscv.best_params_, best_params_cv_score
 
     def cs_train_with_timeseries_cv(self, model, param_grid):
         data, _, _, x, y, _, _, _, _ = self.datasets
@@ -403,8 +420,17 @@ class MdfCsBaseModel(MdfBaseModel):
             )
             study = self.tune_with_optuna(objective, direction=constants.OPTUNA_MINIMIZE_DIRECTION, n_trials=NUM_OPTUNA_TRIALS)
             model = model.set_params(**study.best_params)
+            scores = cross_validate(
+                estimator=model,
+                X=x,
+                y=y,
+                cv=cv,
+                scoring=self.metric,
+                n_jobs=-1
+            )
+            best_params_cv_score = -scores["test_score"].mean()
             model = model.fit(y=y, X=x)
-            return model, study.best_params
+            return model, study.best_params, best_params_cv_score
         else:
             cv = self.get_cv(timeseries_cv_equal_sets=False, data=data)
 
@@ -430,8 +456,17 @@ class MdfCsBaseModel(MdfBaseModel):
 
             gscv.fit(y=y, X=x)
             model = model.set_params(**gscv.best_params_)
+            scores = cross_validate(
+                estimator=model,
+                X=x,
+                y=y,
+                cv=cv,
+                scoring=self.metric,
+                n_jobs=-1
+            )
+            best_params_cv_score = -scores["test_score"].mean()
             model = model.fit(y=y, X=x)
-            return model, gscv.best_params_
+            return model, gscv.best_params_, best_params_cv_score
 
 
 class MdfSeqBaseModel(MdfBaseModel):
@@ -443,6 +478,7 @@ class MdfSeqBaseModel(MdfBaseModel):
             modeling_constants.MAPE_NAME: tf.keras.metrics.mean_absolute_percentage_error,
             modeling_constants.WAPE_NAME: tf.keras.metrics.mean_squared_error, # mapping WAPE to MSE because TF doesn't have any loss function for WAPE. In future improvements, we can create a custom TF loss for WAPE.
         }
+        self.loss = self.loss_mappings[self.metric]
         self.model_class = None  # abstract
 
     def get_seq_datasets(self):
@@ -488,26 +524,43 @@ class MdfSeqBaseModel(MdfBaseModel):
         }
         return optimizer_args
 
-    def get_optuna_seq_objective(self, get_model_params, X, y, cv):
+    def get_seq_cv_score(self, cv, model_params, x_train, y_train):
+        scores = []
+        for train_index, test_index in cv:
+            train_x = x_train[train_index]
+            train_y = y_train[train_index]
+            test_x = x_train[test_index]
+            test_y = y_train[test_index]
+            input = Input(shape=(SEQ_DATA_LEN, train_x.shape[-1]))
+            output = self.model_class(**model_params)(input)
+            model = Model(inputs=input, outputs=output)
+            model.compile(optimizer='adam', loss=self.loss, metrics=[self.loss])
+            model.fit(train_x, train_y, epochs=self.training_epochs)
+            score = model.evaluate(test_x, test_y)[0]
+            scores.append(score)
+        return scores
+
+    def get_optuna_seq_cv_score(self, trial, X, y, cv):
+        optimizer_args = self.get_optimizer_optuna_args(trial)
+        optimizer = tf.keras.optimizers.Adam(**optimizer_args)
+        scores = []
+
+        for train_index, test_index in cv:
+            train_x = X[train_index]
+            train_y = y[train_index]
+            test_x = X[test_index]
+            test_y = y[test_index]
+            model = self.get_model_object(trial)
+            model.compile(optimizer=optimizer, loss=self.loss, metrics=[self.loss])
+            model.fit(train_x, train_y, epochs=self.training_epochs)
+            score = model.evaluate(test_x, test_y)[0]
+            scores.append(score)
+        return np.mean(scores), optimizer
+
+    def get_optuna_seq_objective(self, X, y, cv):
         def objective(trial):
-            optimizer_args = self.get_optimizer_optuna_args(trial)
-            optimizer = tf.keras.optimizers.Adam(**optimizer_args)
-
-            scores = []
-            tf_loss = self.loss_mappings[self.metric]
-            for train_index, test_index in cv:
-                train_x = X[train_index]
-                train_y = y[train_index]
-                test_x = X[test_index]
-                test_y = y[test_index]
-                model = self.get_model_object(trial)
-                model.compile(optimizer=optimizer, loss=tf_loss, metrics=[tf_loss])
-                model.fit(train_x, train_y, epochs=self.training_epochs)
-                score = model.evaluate(test_x, test_y)[0]
-                scores.append(score)
-
-            return np.mean(scores)
-
+            score, _ = self.get_optuna_seq_cv_score(trial, X, y, cv)
+            return score
         return objective
 
     def seq_train_with_timeseries_cv(self, param_grid):
@@ -515,62 +568,38 @@ class MdfSeqBaseModel(MdfBaseModel):
 
         cv = self.get_cv(timeseries_cv_equal_sets=TIMESERIES_CV_EQUAL_SETS, data= pd.Index(np.arange(0,len(x_train))), seq_data=True)
 
-        # if TIMESERIES_CV_APPROACH == constants.SLIDING_WINDOW_NAME:
-        #     cv = TimeSeriesSplit(
-        #         n_splits=CV_FOLDS,
-        #         max_train_size=TIMESERIES_CV_WINDOW,
-        #     )
-        # elif TIMESERIES_CV_APPROACH == constants.EXPANDING_WINDOW_NAME:
-        #     cv = TimeSeriesSplit(
-        #         n_splits=CV_FOLDS,
-        #         max_train_size=None,  # this will make the splits use expanding window
-        #     )
-        # else:
-        #     logging.error("Invalid timeseries CV approach")
-
         if TUNE_USING_OPTUNA:
-            objective = self.get_optuna_seq_objective(get_model_params=self.get_optuna_params, X=x_train, y=y_train,
-                                                      cv=cv)
+            objective = self.get_optuna_seq_objective(X=x_train, y=y_train, cv=cv)
             study = self.tune_with_optuna(objective, direction=constants.OPTUNA_MINIMIZE_DIRECTION, n_trials=NUM_OPTUNA_TRIALS)
             best_trial = study.best_trial
             best_params = study.best_params
-            optimizer_params = self.get_optimizer_optuna_args(best_trial)
-            optimizer_params = {k: v for k, v in best_params.items() if k in optimizer_params}
+
+            best_params_cv_score, optimizer = self.get_optuna_seq_cv_score(best_trial, x_train, y_train, cv)
+
             model = self.get_model_object(best_trial)
-            optimizer = tf.keras.optimizers.Adam(**optimizer_params)
-            model.compile(optimizer=optimizer, loss='mse', metrics=['mse'])
+            model.compile(optimizer=optimizer, loss=self.loss, metrics=[self.loss])
             model.fit(y=y_train, x=x_train)
-            return model, best_params
+            return model, best_params, best_params_cv_score
         else:
             param_grid = [dict(zip(list(param_grid.keys()), comb)) for comb in
                           list(itertools.product(*param_grid.values()))]
             results = []
             for model_params in param_grid:
-                scores = []
-                # for train_index, test_index in cv.split(x_train):
-                for train_index, test_index in cv:
-                    train_x = x_train[train_index]
-                    train_y = y_train[train_index]
-                    test_x = x_train[test_index]
-                    test_y = y_train[test_index]
-                    input = Input(shape=(SEQ_DATA_LEN, train_x.shape[-1]))
-                    output = self.model_class(**model_params)(input)
-                    model = Model(inputs=input, outputs=output)
-                    model.compile(optimizer='adam', loss='mse', metrics=['mse'])
-                    model.fit(train_x, train_y, epochs=self.training_epochs)
-                    score = model.evaluate(test_x, test_y)[0]
-                    scores.append(score)
+                scores = self.get_seq_cv_score(cv, model_params, x_train, y_train)
                 results.append((model_params, np.mean(scores)))
 
             best_params = sorted(results, key=lambda x: x[1])[0][0]
+
+            scores = self.get_seq_cv_score(cv, best_params, x_train, y_train)
+            best_params_cv_score = np.mean(scores)
 
             input = Input(shape=(SEQ_DATA_LEN, x_train.shape[-1]))
             output = self.model_class(**best_params)(input)
             model = Model(inputs=input, outputs=output)
 
-            model.compile(optimizer='adam', loss='mse', metrics=['mse'])
+            model.compile(optimizer='adam', loss=self.loss, metrics=[self.loss])
             model.fit(x_train, y_train, epochs=self.training_epochs)
-            return model, best_params
+            return model, best_params, best_params_cv_score
 
 
 class MdfSarimax(MdfTsBaseModel):
@@ -666,13 +695,13 @@ class MdfLinearRegression(MdfCsBaseModel):
             param_grid = self.default_param_grid
 
         if TIMESERIES_USE_CV:
-            model, best_params = self.cs_train_with_timeseries_cv(model=model, param_grid=param_grid)
+            model, best_params, best_params_cv_score = self.cs_train_with_timeseries_cv(model=model, param_grid=param_grid)
             logging.info(f"The best parameters of the {self.model_name} model are: {best_params}")
         else:
-            model, best_params = self.cs_train_with_sklearn_cv(model=model, param_grid=param_grid, data=train)
+            model, best_params, best_params_cv_score = self.cs_train_with_sklearn_cv(model=model, param_grid=param_grid, data=train)
 
         self.model = model
-        return self, best_params
+        return self, best_params, best_params_cv_score
 
     def get_optuna_params(self, trial):
         params = {
@@ -700,13 +729,13 @@ class MdfRidge(MdfCsBaseModel):
             param_grid = self.default_param_grid
 
         if TIMESERIES_USE_CV:
-            model, best_params = self.cs_train_with_timeseries_cv(model=model, param_grid=param_grid)
+            model, best_params, best_params_cv_score = self.cs_train_with_timeseries_cv(model=model, param_grid=param_grid)
             logging.info(f"The best parameters of the {self.model_name} model are: {best_params}")
         else:
-            model, best_params = self.cs_train_with_sklearn_cv(model=model, param_grid=param_grid, data=train)
+            model, best_params, best_params_cv_score = self.cs_train_with_sklearn_cv(model=model, param_grid=param_grid, data=train)
 
         self.model = model
-        return self, best_params
+        return self, best_params, best_params_cv_score
 
     def get_optuna_params(self, trial):
         params = {
@@ -735,13 +764,13 @@ class MdfLasso(MdfCsBaseModel):
             param_grid = self.default_param_grid
 
         if TIMESERIES_USE_CV:
-            model, best_params = self.cs_train_with_timeseries_cv(model=model, param_grid=param_grid)
+            model, best_params, best_params_cv_score = self.cs_train_with_timeseries_cv(model=model, param_grid=param_grid)
             logging.info(f"The best parameters of the {self.model_name} model are: {best_params}")
         else:
-            model, best_params = self.cs_train_with_sklearn_cv(model=model, param_grid=param_grid, data=train)
+            model, best_params, best_params_cv_score = self.cs_train_with_sklearn_cv(model=model, param_grid=param_grid, data=train)
 
         self.model = model
-        return self, best_params
+        return self, best_params, best_params_cv_score
 
     def get_optuna_params(self, trial):
         params = {
@@ -771,13 +800,13 @@ class MdfElasticNet(MdfCsBaseModel):
             param_grid = self.default_param_grid
 
         if TIMESERIES_USE_CV:
-            model, best_params = self.cs_train_with_timeseries_cv(model=model, param_grid=param_grid)
+            model, best_params, best_params_cv_score = self.cs_train_with_timeseries_cv(model=model, param_grid=param_grid)
             logging.info(f"The best parameters of the {self.model_name} model are: {best_params}")
         else:
-            model, best_params = self.cs_train_with_sklearn_cv(model=model, param_grid=param_grid, data=train)
+            model, best_params, best_params_cv_score = self.cs_train_with_sklearn_cv(model=model, param_grid=param_grid, data=train)
 
         self.model = model
-        return self, best_params
+        return self, best_params, best_params_cv_score
 
     def get_optuna_params(self, trial):
         params = {
@@ -810,13 +839,13 @@ class MdfXgb(MdfCsBaseModel):
             param_grid = self.default_param_grid
 
         if TIMESERIES_USE_CV:
-            model, best_params = self.cs_train_with_timeseries_cv(model=model, param_grid=param_grid)
+            model, best_params, best_params_cv_score = self.cs_train_with_timeseries_cv(model=model, param_grid=param_grid)
             logging.info(f"The best parameters of the {self.model_name} model are: {best_params}")
         else:
-            model, best_params = self.cs_train_with_sklearn_cv(model=model, param_grid=param_grid, data=train)
+            model, best_params, best_params_cv_score = self.cs_train_with_sklearn_cv(model=model, param_grid=param_grid, data=train)
 
         self.model = model
-        return self, best_params
+        return self, best_params, best_params_cv_score
 
     def get_optuna_params(self, trial):
         params = {
@@ -858,13 +887,13 @@ class MdfLgbm(MdfCsBaseModel):
             param_grid = self.default_param_grid
 
         if TIMESERIES_USE_CV:
-            model, best_params = self.cs_train_with_timeseries_cv(model=model, param_grid=param_grid)
+            model, best_params, best_params_cv_score = self.cs_train_with_timeseries_cv(model=model, param_grid=param_grid)
             logging.info(f"The best parameters of the {self.model_name} model are: {best_params}")
         else:
-            model, best_params = self.cs_train_with_sklearn_cv(model=model, param_grid=param_grid, data=train)
+            model, best_params, best_params_cv_score = self.cs_train_with_sklearn_cv(model=model, param_grid=param_grid, data=train)
 
         self.model = model
-        return self, best_params
+        return self, best_params, best_params_cv_score
 
     def get_optuna_params(self, trial):
         params = {
@@ -955,8 +984,8 @@ class MdfCnn(MdfSeqBaseModel):
         except:
             param_grid = self.default_param_grid
 
-        self.model, best_params = self.seq_train_with_timeseries_cv(param_grid=param_grid)
-        return self, best_params
+        self.model, best_params, best_params_cv_score = self.seq_train_with_timeseries_cv(param_grid=param_grid)
+        return self, best_params, best_params_cv_score
 
 
 class MdfSeqModel(MdfSeqBaseModel):
@@ -1009,8 +1038,8 @@ class MdfSeqModel(MdfSeqBaseModel):
         except:
             param_grid = self.default_param_grid
 
-        self.model, best_params = self.seq_train_with_timeseries_cv(param_grid=param_grid)
-        return self, best_params
+        self.model, best_params, best_params_cv_score = self.seq_train_with_timeseries_cv(param_grid=param_grid)
+        return self, best_params, best_params_cv_score
 
 
 class MdfGru(MdfSeqModel):

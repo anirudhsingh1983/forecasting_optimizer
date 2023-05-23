@@ -40,6 +40,7 @@ MAE_NAME = 'neg_mean_absolute_error'
 WAPE_NAME = 'wape'
 MAPE_NAME = 'neg_mean_absolute_percentage_error'
 
+TRAIN_CV_SCORE_NAME = 'train_cv_score'
 MODEL_PERFORMANCE_RESULT_NAME = 'model_performances'
 
 OUTLIER_METHOD_BOXPLOT_NAME = 'boxplot'

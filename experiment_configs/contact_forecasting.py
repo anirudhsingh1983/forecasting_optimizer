@@ -34,16 +34,16 @@ PREPROCESSING_FUNCTION = sf.preprocessing
 TRAIN_VAL_SPLIT_DATE = '2023-06-01'
 VAL_TEST_SPLIT_DATE = '2023-06-01'
 CATEGORICAL_ENGINEERED_FEATURES = ['day', 'month']
-# MODELS_TO_TRAIN = [
-#     constants.RIDGE_NAME, constants.LASSO_NAME, constants.ELASTICNET_NAME,
-#     constants.LINEARREGRESSION_NAME, constants.XGB_NAME, constants.LSTM_NAME, constants.GRU_NAME, constants.CNN_NAME,
-#     # constants.SARIMAX_NAME
-# ]
 MODELS_TO_TRAIN = [
-    constants.ELASTICNET_NAME,
+    constants.RIDGE_NAME, constants.LASSO_NAME, constants.ELASTICNET_NAME,
+    constants.LINEARREGRESSION_NAME, constants.XGB_NAME, constants.LSTM_NAME, constants.GRU_NAME, constants.CNN_NAME,
+    # constants.SARIMAX_NAME
 ]
 # MODELS_TO_TRAIN = [
-#     constants.CNN_NAME,
+#     constants.ELASTICNET_NAME,
+# ]
+# MODELS_TO_TRAIN = [
+#     constants.LSTM_NAME, constants.GRU_NAME, constants.CNN_NAME,
 # ]
 # MODELS_TO_TRAIN = [
 #     constants.SARIMAX_NAME,
@@ -133,4 +133,5 @@ MAX_SEQUENTIAL_NN_LAYERS = 3
 MAX_CNN_LAYERS = 3
 MAX_CNN_FILTERS = 5
 
-DATASET_FOR_PERFORMANCE_OPTIMIZATION = constants.TRAIN_NAME  # possible values are: [constants.TRAIN_NAME, constants.VAL_NAME, constants.TEST_NAME]
+RETRAIN_MODEL_ON_BEST_PARAMS = False # If False, the model will use the CV result on train set to be the train set performance.
+DATASET_FOR_PERFORMANCE_OPTIMIZATION = constants.TRAIN_CV_SCORE_NAME  # possible values are: [constants.TRAIN_NAME, constants.VAL_NAME, constants.TEST_NAME, constants.TRAIN_CV_SCORE_NAME]

@@ -40,14 +40,14 @@ class Modeling():
     def _train_one_model(self, model_name):
         _model_class = MODEL_CLASSES[model_name]
         model = _model_class(data=self.data, target_col_name=experiment_constants.TARGET_COL, experiment_id=self.experiment_id)
-        model, best_params = model.fit()
+        model, best_params, best_params_cv_score = model.fit()
         train_metric, val_metric, test_metric = model.evaluate()
         logging.info(
             f"Training performance: {train_metric} \n Val performance: {val_metric} \n Test performance: {test_metric}")
-        return train_metric, val_metric, test_metric, best_params
+        return train_metric, val_metric, test_metric, best_params, best_params_cv_score
 
     def execute_modeling(self):
-        train_metric, val_metric, test_metric, best_params = self._train_one_model(
+        train_metric, val_metric, test_metric, best_params, best_params_cv_score = self._train_one_model(
             model_name=self.model,
         )
         model_performance = {
@@ -55,6 +55,7 @@ class Modeling():
             constants.TRAIN_NAME: train_metric,
             constants.VAL_NAME: val_metric,
             constants.TEST_NAME: test_metric,
+            constants.TRAIN_CV_SCORE_NAME: best_params_cv_score,
         }
         model_key = ""
         for k, v in model_performance[constants.BEST_PARAMETERS_NAME].items():
