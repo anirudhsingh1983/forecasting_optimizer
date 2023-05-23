@@ -34,17 +34,17 @@ PREPROCESSING_FUNCTION = sf.preprocessing
 TRAIN_VAL_SPLIT_DATE = '2023-06-01'
 VAL_TEST_SPLIT_DATE = '2023-06-01'
 CATEGORICAL_ENGINEERED_FEATURES = ['day', 'month']
-MODELS_TO_TRAIN = [
-    constants.RIDGE_NAME, constants.LASSO_NAME, constants.ELASTICNET_NAME,
-    constants.LINEARREGRESSION_NAME, constants.XGB_NAME, constants.LSTM_NAME, constants.GRU_NAME, constants.CNN_NAME,
-    # constants.SARIMAX_NAME
-]
+# MODELS_TO_TRAIN = [
+#     constants.RIDGE_NAME, constants.LASSO_NAME, constants.ELASTICNET_NAME,
+#     constants.LINEARREGRESSION_NAME, constants.XGB_NAME, constants.LSTM_NAME, constants.GRU_NAME, constants.CNN_NAME,
+#     # constants.SARIMAX_NAME
+# ]
 # MODELS_TO_TRAIN = [
 #     constants.ELASTICNET_NAME,
 # ]
-# MODELS_TO_TRAIN = [
-#     constants.LSTM_NAME, constants.GRU_NAME, constants.CNN_NAME,
-# ]
+MODELS_TO_TRAIN = [
+    constants.LSTM_NAME, constants.GRU_NAME, constants.CNN_NAME,
+]
 # MODELS_TO_TRAIN = [
 #     constants.SARIMAX_NAME,
 # ]

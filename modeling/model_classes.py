@@ -538,6 +538,8 @@ class MdfSeqBaseModel(MdfBaseModel):
             model.fit(train_x, train_y, epochs=self.training_epochs)
             score = model.evaluate(test_x, test_y)[0]
             scores.append(score)
+            del model
+        tf.keras.backend.clear_session()
         return scores
 
     def get_optuna_seq_cv_score(self, trial, X, y, cv):
@@ -555,6 +557,8 @@ class MdfSeqBaseModel(MdfBaseModel):
             model.fit(train_x, train_y, epochs=self.training_epochs)
             score = model.evaluate(test_x, test_y)[0]
             scores.append(score)
+            del model
+        tf.keras.backend.clear_session()
         return np.mean(scores), optimizer
 
     def get_optuna_seq_objective(self, X, y, cv):

@@ -88,9 +88,16 @@ def ignore_warnings(test_func):
 
 
 def get_raw_data():
-    dataQuery = "select * from wf-gcp-us-ae-dsservice-prod.junk.dailyContactsOrderHolidaysNaB2cV3  order by actualWeek, presentedDate;"
-    result_stream = _bqclient.query(dataQuery).result()
-    df_raw = result_stream.to_dataframe(bqstorage_client=_bqstorageclient)
+    try:
+        dataQuery = "select * from wf-gcp-us-ae-dsservice-prod.junk.dailyContactsOrderHolidaysNaB2cV3  order by actualWeek, presentedDate;"
+        result_stream = _bqclient.query(dataQuery).result()
+        df_raw = result_stream.to_dataframe(bqstorage_client=_bqstorageclient)
+    except:
+        with open('projects/contact_forecasting/queries/historical_data.sql', 'r') as f:
+            dataQuery = f.read()
+        result_stream = _bqclient.query(dataQuery).result()
+        df_raw = result_stream.to_dataframe(bqstorage_client=_bqstorageclient)
+
     df_raw.index = df_raw['presentedDate']
     # df_raw = df_raw.drop(columns=['actualWeek', 'presentedDate'])
     return df_raw
