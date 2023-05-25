@@ -199,7 +199,7 @@ class FeatureEngineering():
     def execute_feature_engineering(self):
         self._generate_features()
         self._treat_categorical_features()
-        self._scale_data()
+        # self._scale_data()
         self._remove_outliers()
         self._save_processed_data()
         return self.train, self.val, self.test

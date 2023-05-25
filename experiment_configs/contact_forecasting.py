@@ -76,7 +76,7 @@ IMPUTING_VAL_DICT = {
 # - 'zscore'
 # - 'svmoneclass'
 # - 'isolationforest'
-OUTLIER_METHODS = [None, 'isolationforest']
+OUTLIER_METHODS = [None]
 REMOVE_OUTLIERS = False
 
 

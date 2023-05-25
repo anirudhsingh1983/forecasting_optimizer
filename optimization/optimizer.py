@@ -138,6 +138,7 @@ class Optimizer():
             experiment_id=self.experiment_id,
             trial=trial,
             data=(train, val, test),
+            feature_engineering_scaler=feature_engineering_scaler,
             model=model_to_train,
         ).execute_modeling()
 

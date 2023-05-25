@@ -15,7 +15,7 @@ experiment_constants = importlib.import_module(
     f"experiment_configs.{experiment_settings.EXPERIMENT_CONSTANTS_MODULE_NAME}")
 
 class Modeling():
-    def __init__(self, experiment_id, trial, data=None, model=None):
+    def __init__(self, experiment_id, trial, data=None, feature_engineering_scaler=None, model=None):
         self.experiment_id = experiment_id
         self.trial = trial
 
@@ -23,6 +23,8 @@ class Modeling():
             self.data = self._load_data(experiment_id=self.experiment_id)
         else:
             self.data = data
+
+        self.feature_engineering_scaler = feature_engineering_scaler
 
         if model is None:
             self.model = framework_settings.DEFAULT_MODEL_TO_TRAIN
@@ -39,7 +41,12 @@ class Modeling():
 
     def _train_one_model(self, model_name):
         _model_class = MODEL_CLASSES[model_name]
-        model = _model_class(data=self.data, target_col_name=experiment_constants.TARGET_COL, experiment_id=self.experiment_id)
+        model = _model_class(
+            data=self.data,
+            target_col_name=experiment_constants.TARGET_COL,
+            feature_engineering_scaler=self.feature_engineering_scaler,
+            experiment_id=self.experiment_id,
+        )
         model, best_params, best_params_cv_score = model.fit()
         train_metric, val_metric, test_metric = model.evaluate()
         logging.info(

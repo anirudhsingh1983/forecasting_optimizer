@@ -167,18 +167,83 @@ except:
 
 
 class MdfBaseModel(ABC):
-    def __init__(self, data, target_col_name, experiment_id):
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
         self.data = data
         self.target_col_name = target_col_name
         self.model = None
         self.metric = EVALUATION_METRIC_TO_USE
         self.scorer = self.get_scorer_function(eval_metric=self.metric)
+        self.scaler = feature_engineering_scaler
         self.experiment_id = experiment_id
 
     def split_xy(self, data):
         x = data.drop(columns=[self.target_col_name])
         y = data[self.target_col_name]
         return x, y
+
+    def scale_cs_data(self, train, val=None, test=None):
+        self.scaler.fit(train)
+        train = pd.DataFrame(
+            data=self.scaler.transform(train),
+            index=train.index,
+            columns=train.columns,
+        )
+
+        if val is None:
+            val = np.empty(shape=[0,0,0])
+        else:
+            if len(val) > 0:
+                val = pd.DataFrame(
+                    data=self.scaler.transform(val),
+                    index=val.index,
+                    columns=val.columns,
+                )
+
+        if test is None:
+            test = np.empty(shape=[0,0,0])
+        else:
+            if len(test) > 0:
+                test = pd.DataFrame(
+                    data=self.scaler.transform(test),
+                    index=test.index,
+                    columns=test.columns,
+                )
+        return train, val, test
+
+    def scale_seq_data(self, train, val=None, test=None):
+        shape = train.shape
+        newshape = tuple([shape[0] * shape[1]]) + shape[2:]
+        # if len(newshape) == 1:  # In case of 2D arrays, the newshape will be of length 1. This si to be converted to 2D to suit the scaler format.
+        #     newshape = tuple(newshape) + tuple([1])
+
+        train_df = pd.DataFrame(
+            data = np.reshape(a=train, newshape=newshape, order='C'),
+        ).drop_duplicates().values
+        self.scaler.fit(train_df)
+
+        train = pd.Series(list(train))
+        train = train.apply(lambda df: self.scaler.transform(df.reshape([1,1])).reshape([1]) if (df.shape==(1,)) else self.scaler.transform(df))
+        train = np.array(list(train))
+
+        if val is None:
+            val = np.empty(shape=[0,0,0])
+        else:
+            if len(val) > 0:
+                val = pd.Series(list(val))
+                val = val.apply(lambda df: self.scaler.transform(df.reshape([1, 1])).reshape([1]) if (
+                            df.shape == (1,)) else self.scaler.transform(df))
+                val = np.array(list(val))
+
+        if test is None:
+            test = np.empty(shape=[0,0,0])
+        else:
+            if len(test) > 0:
+                test = pd.Series(list(test))
+                test = test.apply(lambda df: self.scaler.transform(df.reshape([1, 1])).reshape([1]) if (
+                            df.shape == (1,)) else self.scaler.transform(df))
+                test = np.array(list(test))
+
+        return train, val, test
 
     def get_cv_attributes(self, data):
         default_timeseries_cv_window = len(data) // (CV_FOLDS + 1)
@@ -302,8 +367,8 @@ class MdfBaseModel(ABC):
 
 
 class MdfTsBaseModel(MdfBaseModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
 
     def get_ts_datasets(self, d=0):
         train, val, test = self.data
@@ -339,6 +404,8 @@ class MdfTsBaseModel(MdfBaseModel):
                     train_y = y.iloc[train_index]
                     test_x = x.iloc[test_index]
                     test_y = y.iloc[test_index]
+                    train_x, test_x = self.scale_cs_data(train=train_x, val=test_x, test=None)
+                    train_y, test_y = self.scale_cs_data(train=train_y, val=test_y, test=None)
                     model = estimator_class(y=train_y, X=train_x, **params)
                     model = model.fit(y=train_y, X=train_x)
                     y_pred = model.predict(n_periods=len(test_x), X=test_x)
@@ -353,8 +420,8 @@ class MdfTsBaseModel(MdfBaseModel):
 
 
 class MdfCsBaseModel(MdfBaseModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
 
     def get_cs_datasets(self):
         train, val, test = self.data
@@ -470,8 +537,8 @@ class MdfCsBaseModel(MdfBaseModel):
 
 
 class MdfSeqBaseModel(MdfBaseModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
         self.loss_mappings = {
             modeling_constants.MSE_NAME: tf.keras.metrics.mean_squared_error,
             modeling_constants.MAE_NAME: tf.keras.metrics.mean_absolute_error,
@@ -531,6 +598,8 @@ class MdfSeqBaseModel(MdfBaseModel):
             train_y = y_train[train_index]
             test_x = x_train[test_index]
             test_y = y_train[test_index]
+            train_x, test_x = self.scale_seq_data(train=train_x, val=test_x, test=None)
+            train_y, test_y = self.scale_seq_data(train=train_y, val=test_y, test=None)
             input = Input(shape=(SEQ_DATA_LEN, train_x.shape[-1]))
             output = self.model_class(**model_params)(input)
             model = Model(inputs=input, outputs=output)
@@ -552,6 +621,8 @@ class MdfSeqBaseModel(MdfBaseModel):
             train_y = y[train_index]
             test_x = X[test_index]
             test_y = y[test_index]
+            train_x, test_x, _ = self.scale_seq_data(train=train_x, val=test_x, test=None)
+            train_y, test_y, _ = self.scale_seq_data(train=train_y, val=test_y, test=None)
             model = self.get_model_object(trial)
             model.compile(optimizer=optimizer, loss=self.loss, metrics=[self.loss])
             model.fit(train_x, train_y, epochs=self.training_epochs)
@@ -607,8 +678,8 @@ class MdfSeqBaseModel(MdfBaseModel):
 
 
 class MdfSarimax(MdfTsBaseModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
         self.model_name = constants.SARIMAX_NAME
         self.default_param_grid = {
             'max_p': np.arange(2, 10, 2),
@@ -670,20 +741,20 @@ class MdfSarimax(MdfTsBaseModel):
 
 
 class MdfProphet(MdfTsBaseModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
         self.model_name = constants.PROPHET_NAME
 
 
 class MdfNeuralProphet(MdfTsBaseModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
         self.model_name = constants.NEURAL_PROPHET_NAME
 
 
 class MdfLinearRegression(MdfCsBaseModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
         self.model_name = constants.LINEARREGRESSION_NAME
         self.default_param_grid = {
             'fit_intercept': [True, False],
@@ -715,8 +786,8 @@ class MdfLinearRegression(MdfCsBaseModel):
 
 
 class MdfRidge(MdfCsBaseModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
         self.model_name = constants.RIDGE_NAME
         self.default_param_grid = {
             'alpha': [0.1, 0.5, 0.8, 1.0, 2.0],
@@ -750,8 +821,8 @@ class MdfRidge(MdfCsBaseModel):
 
 
 class MdfLasso(MdfCsBaseModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
         self.model_name = constants.LASSO_NAME
         self.default_param_grid = {
             'alpha': [0.1, 0.5, 0.8, 1.0, 2.0],
@@ -785,8 +856,8 @@ class MdfLasso(MdfCsBaseModel):
 
 
 class MdfElasticNet(MdfCsBaseModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
         self.model_name = constants.ELASTICNET_NAME
         self.default_param_grid = {
             'alpha': [0.1, 0.5, 0.8, 1.0, 2.0],
@@ -822,8 +893,8 @@ class MdfElasticNet(MdfCsBaseModel):
 
 
 class MdfXgb(MdfCsBaseModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
         self.model_name = constants.XGB_NAME
         self.default_param_grid = {
             'min_child_weight': [1, 5, 10],
@@ -863,8 +934,8 @@ class MdfXgb(MdfCsBaseModel):
 
 
 class MdfLgbm(MdfCsBaseModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
         self.model_name = constants.LGBM_NAME
         self.default_param_grid = {
             "n_estimators": [10, 100, 1000, 10000, 100000],
@@ -922,8 +993,8 @@ class MdfLgbm(MdfCsBaseModel):
 
 
 class MdfCnn(MdfSeqBaseModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
         self.model_name = None  # abstract
         self.default_param_grid = {
             "filters": np.arange(1,5),
@@ -993,8 +1064,8 @@ class MdfCnn(MdfSeqBaseModel):
 
 
 class MdfSeqModel(MdfSeqBaseModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
         self.model_name = None  # abstract
         self.default_param_grid = {
             "units": [1],
@@ -1047,8 +1118,8 @@ class MdfSeqModel(MdfSeqBaseModel):
 
 
 class MdfGru(MdfSeqModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
         self.model_name = constants.GRU_NAME
         self.model_class = GRU
         self.default_param_grid = {
@@ -1081,8 +1152,8 @@ class MdfGru(MdfSeqModel):
 
 
 class MdfLstm(MdfSeqModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
         self.model_name = constants.LSTM_NAME
         self.model_class = LSTM
         self.default_param_grid = {
@@ -1114,14 +1185,14 @@ class MdfLstm(MdfSeqModel):
 
 
 class MdfTransformer(MdfSeqModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
         self.model_name = constants.TRANSFORMER_NAME
 
 
 class MdfBert(MdfSeqModel):
-    def __init__(self, data, target_col_name, experiment_id):
-        super().__init__(data, target_col_name, experiment_id)
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
         self.model_name = constants.BERT_NAME
 
 
