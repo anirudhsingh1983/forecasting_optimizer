@@ -613,7 +613,6 @@ class MdfSeqBaseModel(MdfBaseModel):
 
     def get_optuna_seq_cv_score(self, trial, X, y, cv):
         optimizer_args = self.get_optimizer_optuna_args(trial)
-        optimizer = tf.keras.optimizers.Adam(**optimizer_args)
         scores = []
 
         for train_index, test_index in cv:
@@ -624,12 +623,12 @@ class MdfSeqBaseModel(MdfBaseModel):
             train_x, test_x, _ = self.scale_seq_data(train=train_x, val=test_x, test=None)
             train_y, test_y, _ = self.scale_seq_data(train=train_y, val=test_y, test=None)
             model = self.get_model_object(trial)
+            optimizer = tf.keras.optimizers.Adam(**optimizer_args)
             model.compile(optimizer=optimizer, loss=self.loss, metrics=[self.loss])
             model.fit(train_x, train_y, epochs=self.training_epochs)
             score = model.evaluate(test_x, test_y)[0]
             scores.append(score)
-            del model
-        tf.keras.backend.clear_session()
+            tf.keras.backend.clear_session() # clean up the space occupied by the model objects in keras session to avoid memory issues
         return np.mean(scores), optimizer
 
     def get_optuna_seq_objective(self, X, y, cv):
