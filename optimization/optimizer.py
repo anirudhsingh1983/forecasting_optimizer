@@ -214,6 +214,6 @@ class Optimizer():
         best_study_params["model_to_train"] = (
             best_study_params["model_to_train"],
             (best_iteration_result[constants.BEST_PARAMETERS_NAME], best_iteration_result[constants.TRAIN_CV_SCORE_NAME]),
-            final_run_result
+            # final_run_result
         )
         return best_study_params

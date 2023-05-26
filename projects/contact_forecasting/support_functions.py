@@ -256,7 +256,9 @@ def preprocessing(trial, df_raw):
     df_ip["exp_tot_call_vol_lag1"] = df_ip["exp_tot_call_vol_lag1"] ** 1
     df_ip["exp_ma_orders"] = df_ip["exp_ma_orders"] ** 1
     df_ip["exp_cnt_orders_lag1"] = df_ip["exp_cnt_orders_lag1"] ** 1
-    df_ip["tot_na_fcst"] = df_ip["tot_na_fcst"] ** 3
+    na_fcst_pow = trial.suggest_float("na_fcst_pow", 0, 5)
+    df_ip["tot_na_fcst"] = df_ip["tot_na_fcst"] ** na_fcst_pow
+    # df_ip["tot_na_fcst"] = df_ip["tot_na_fcst"] ** 3
 
     df_ip = df_ip[coln].dropna().reset_index(drop=True)
     df_ip.index = df_ip['week']
