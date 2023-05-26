@@ -182,66 +182,70 @@ class MdfBaseModel(ABC):
         return x, y
 
     def scale_cs_data(self, train, val=None, test=None):
-        self.scaler.fit(train)
-        train = pd.DataFrame(
-            data=self.scaler.transform(train),
-            index=train.index,
-            columns=train.columns,
-        )
+        if self.scaler is not None:
+            train = pd.DataFrame(train)
+            val = pd.DataFrame(val)
+            test = pd.DataFrame(test)
 
-        if val is None:
-            val = np.empty(shape=[0,0,0])
-        else:
-            if len(val) > 0:
-                val = pd.DataFrame(
-                    data=self.scaler.transform(val),
-                    index=val.index,
-                    columns=val.columns,
-                )
+            self.scaler.fit(train)
+            train = pd.DataFrame(
+                data=self.scaler.transform(train),
+                index=train.index,
+                columns=train.columns,
+            )
 
-        if test is None:
-            test = np.empty(shape=[0,0,0])
-        else:
-            if len(test) > 0:
-                test = pd.DataFrame(
-                    data=self.scaler.transform(test),
-                    index=test.index,
-                    columns=test.columns,
-                )
+            if val is None:
+                val = np.empty(shape=[0,0,0])
+            else:
+                if len(val) > 0:
+                    val = pd.DataFrame(
+                        data=self.scaler.transform(val),
+                        index=val.index,
+                        columns=val.columns,
+                    )
+
+            if test is None:
+                test = np.empty(shape=[0,0,0])
+            else:
+                if len(test) > 0:
+                    test = pd.DataFrame(
+                        data=self.scaler.transform(test),
+                        index=test.index,
+                        columns=test.columns,
+                    )
         return train, val, test
 
     def scale_seq_data(self, train, val=None, test=None):
-        shape = train.shape
-        newshape = tuple([shape[0] * shape[1]]) + shape[2:]
-        # if len(newshape) == 1:  # In case of 2D arrays, the newshape will be of length 1. This si to be converted to 2D to suit the scaler format.
-        #     newshape = tuple(newshape) + tuple([1])
+        if self.scaler is not None:
+            shape = train.shape
+            newshape = tuple([shape[0] * shape[1]]) + shape[2:]
 
-        train_df = pd.DataFrame(
-            data = np.reshape(a=train, newshape=newshape, order='C'),
-        ).drop_duplicates().values
-        self.scaler.fit(train_df)
+            train_df = pd.DataFrame(
+                data = np.reshape(a=train, newshape=newshape, order='C'),
+            ).drop_duplicates().values
+            self.scaler.fit(train_df)
 
-        train = pd.Series(list(train))
-        train = train.apply(lambda df: self.scaler.transform(df.reshape([1,1])).reshape([1]) if (df.shape==(1,)) else self.scaler.transform(df))
-        train = np.array(list(train))
+            train = pd.Series(list(train))
+            train = train.apply(lambda df: self.scaler.transform(df.reshape([1,1])).reshape([1]) if (df.shape==(1,)) else self.scaler.transform(df))
+            train = np.array(list(train))
 
-        if val is None:
-            val = np.empty(shape=[0,0,0])
-        else:
-            if len(val) > 0:
-                val = pd.Series(list(val))
-                val = val.apply(lambda df: self.scaler.transform(df.reshape([1, 1])).reshape([1]) if (
-                            df.shape == (1,)) else self.scaler.transform(df))
-                val = np.array(list(val))
+            if val is None:
+                val = np.empty(shape=[0,0,0])
+            else:
+                if len(val) > 0:
+                    val = pd.Series(list(val))
+                    val = val.apply(lambda df: self.scaler.transform(df.reshape([1, 1])).reshape([1]) if (
+                                df.shape == (1,)) else self.scaler.transform(df))
+                    val = np.array(list(val))
 
-        if test is None:
-            test = np.empty(shape=[0,0,0])
-        else:
-            if len(test) > 0:
-                test = pd.Series(list(test))
-                test = test.apply(lambda df: self.scaler.transform(df.reshape([1, 1])).reshape([1]) if (
-                            df.shape == (1,)) else self.scaler.transform(df))
-                test = np.array(list(test))
+            if test is None:
+                test = np.empty(shape=[0,0,0])
+            else:
+                if len(test) > 0:
+                    test = pd.Series(list(test))
+                    test = test.apply(lambda df: self.scaler.transform(df.reshape([1, 1])).reshape([1]) if (
+                                df.shape == (1,)) else self.scaler.transform(df))
+                    test = np.array(list(test))
 
         return train, val, test
 
@@ -434,15 +438,20 @@ class MdfCsBaseModel(MdfBaseModel):
         def objective(trial):
             params = get_optuna_params(trial)
             model = estimator.set_params(**params)
-            scores = cross_validate(
-                estimator=model,
-                X=X,
-                y=y,
-                cv=cv,
-                scoring=scoring,
-                n_jobs=-1
-            )
-            mean_score = -scores["test_score"].mean() # a -ve sign is added because the scores are negative values of the loss in the chosen errors. With this, a higher score will not be desirable aligning with minimization objective.
+            scores = []
+            for train_index, test_index in cv:
+                train_x = X.iloc[train_index]
+                train_y = y.iloc[train_index]
+                test_x = X.iloc[test_index]
+                test_y = y.iloc[test_index]
+                train_x, test_x, _ = self.scale_cs_data(train=train_x, val=test_x, test=None)
+                train_y, test_y, _ = self.scale_cs_data(train=train_y, val=test_y, test=None)
+                model = model.fit(X=train_x, y=train_y)
+                y_pred = model.predict(X=test_x)
+                score = self.scorer._score_func(test_y, y_pred)
+                scores.append(score)
+
+            mean_score = np.mean(scores)
             return mean_score
 
         return objective
@@ -459,15 +468,20 @@ class MdfCsBaseModel(MdfBaseModel):
         gscv.fit(X=x, y=y)
         model = model.set_params(**gscv.best_params)
         cv = KFold(n_splits=CV_FOLDS)
-        scores = cross_validate(
-            estimator=model,
-            X=x,
-            y=y,
-            cv=cv,
-            scoring=self.metric,
-            n_jobs=-1
-        )
-        best_params_cv_score = -scores["test_score"].mean()
+        scores = []
+        for train_index, test_index in cv:
+            train_x = x.iloc[train_index]
+            train_y = y.iloc[train_index]
+            test_x = x.iloc[test_index]
+            test_y = y.iloc[test_index]
+            train_x, test_x, _ = self.scale_cs_data(train=train_x, val=test_x, test=None)
+            train_y, test_y, _ = self.scale_cs_data(train=train_y, val=test_y, test=None)
+            model = model.fit(X=train_x, y=train_y)
+            y_pred = model.predict(X=test_x)
+            score = self.scorer._score_func(test_y, y_pred)
+            scores.append(score)
+
+        best_params_cv_score = np.mean(scores)
         model = model.fit(y=y, X=x)
         return model, gscv.best_params_, best_params_cv_score
 
@@ -487,15 +501,20 @@ class MdfCsBaseModel(MdfBaseModel):
             )
             study = self.tune_with_optuna(objective, direction=constants.OPTUNA_MINIMIZE_DIRECTION, n_trials=NUM_OPTUNA_TRIALS)
             model = model.set_params(**study.best_params)
-            scores = cross_validate(
-                estimator=model,
-                X=x,
-                y=y,
-                cv=cv,
-                scoring=self.metric,
-                n_jobs=-1
-            )
-            best_params_cv_score = -scores["test_score"].mean()
+            scores = []
+            for train_index, test_index in cv:
+                train_x = x.iloc[train_index]
+                train_y = y.iloc[train_index]
+                test_x = x.iloc[test_index]
+                test_y = y.iloc[test_index]
+                train_x, test_x, _ = self.scale_cs_data(train=train_x, val=test_x, test=None)
+                train_y, test_y, _ = self.scale_cs_data(train=train_y, val=test_y, test=None)
+                model = model.fit(X=train_x, y=train_y)
+                y_pred = model.predict(X=test_x)
+                score = self.scorer._score_func(test_y, y_pred)
+                scores.append(score)
+
+            best_params_cv_score = np.mean(scores)
             model = model.fit(y=y, X=x)
             return model, study.best_params, best_params_cv_score
         else:

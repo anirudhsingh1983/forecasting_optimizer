@@ -35,10 +35,7 @@ class FeatureEngineering():
         else:
             self.data = data
 
-        if outlier_method is None:
-            self.outlier_method = framework_settings.DEFAULT_OUTLIER_METHOD
-        else:
-            self.outlier_method = outlier_method
+        self.outlier_method = outlier_method
 
         if categorical_feature_encoder is None:
             self.categorical_feature_encoder = framework_settings.DEFAULT_OUTLIER_METHOD
@@ -66,7 +63,6 @@ class FeatureEngineering():
         except:
             categorical_engineered_features = []
         self.categorical_engineered_features = categorical_engineered_features
-
 
 
     def _load_data(self, experiment_id):
@@ -100,7 +96,8 @@ class FeatureEngineering():
         encoded_columns = dict(zip(categorical_features, encoded_columns))
         encoded_columns = [[f"{col}_{val}" for val in list(encoded_values)] for col, encoded_values in
                            encoded_columns.items()]
-        encoded_columns = np.concatenate(encoded_columns)
+        if len(encoded_columns) > 0:
+            encoded_columns = np.concatenate(encoded_columns)
 
         train_encoded = pd.DataFrame(
             data=encoder.transform(train[categorical_features]).toarray(),

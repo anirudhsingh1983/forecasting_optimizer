@@ -33,7 +33,8 @@ DATE_COL = 'presentedDate'
 PREPROCESSING_FUNCTION = sf.preprocessing
 TRAIN_VAL_SPLIT_DATE = '2023-06-01'
 VAL_TEST_SPLIT_DATE = '2023-06-01'
-CATEGORICAL_ENGINEERED_FEATURES = ['day', 'month']
+# CATEGORICAL_ENGINEERED_FEATURES = ['day', 'month']
+CATEGORICAL_ENGINEERED_FEATURES = []
 # MODELS_TO_TRAIN = [
 #     constants.RIDGE_NAME, constants.LASSO_NAME, constants.ELASTICNET_NAME,
 #     constants.LINEARREGRESSION_NAME, constants.XGB_NAME, constants.LSTM_NAME, constants.GRU_NAME, constants.CNN_NAME,
@@ -42,12 +43,16 @@ CATEGORICAL_ENGINEERED_FEATURES = ['day', 'month']
 # MODELS_TO_TRAIN = [
 #     constants.ELASTICNET_NAME,
 # ]
-MODELS_TO_TRAIN = [
-    constants.LSTM_NAME, constants.GRU_NAME, constants.CNN_NAME,
-]
+# MODELS_TO_TRAIN = [
+#     constants.LSTM_NAME, constants.GRU_NAME, constants.CNN_NAME,
+# ]
 # MODELS_TO_TRAIN = [
 #     constants.SARIMAX_NAME,
 # ]
+MODELS_TO_TRAIN = [
+    constants.RIDGE_NAME, constants.LASSO_NAME, constants.ELASTICNET_NAME,
+        constants.LINEARREGRESSION_NAME, constants.XGB_NAME
+]
 
 EVALUATION_METRIC_TO_USE = 'neg_mean_absolute_percentage_error'
 PREDICTION_NAME = 'prediction'
@@ -84,17 +89,17 @@ FEATURE_ENGINEERING_FUNCTION = uf.get_date_features
 
 IMPUTERS = [IterativeImputer(max_iter=10, random_state=0)]
 
-CATEGORICAL_FEATURE_ENCODER = OneHotEncoder(handle_unknown='ignore', min_frequency = 0.02)
-FEATURE_ENGINEERING_SCALER = None
+# CATEGORICAL_FEATURE_ENCODER = OneHotEncoder(handle_unknown='ignore', min_frequency = 0.02)
+FEATURE_ENGINEERING_SCALER = [None, MinMaxScaler()]
 
 CV_FOLDS = 5
 TIMESERIES_CV = True
 TIMESERIES_CV_EQUAL_SETS = False
 TIMESERIES_CV_APPROACH = None
 
-TIMESERIES_CV_WINDOW = 210
+TIMESERIES_CV_WINDOW = 190
 TIMESERIES_CV_STEP = 1
-FORECASTING_HORIZON = [1]
+FORECASTING_HORIZON = [2]
 
 USE_SKTIME = False
 

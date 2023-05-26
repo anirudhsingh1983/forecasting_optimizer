@@ -1,6 +1,7 @@
 import importlib
 import logging
 import uuid
+import pickle
 from datetime import datetime
 
 import numpy as np
@@ -160,6 +161,17 @@ class Optimizer():
                 oh_encoder_min_frequency,
                 model_to_train,
             )
+
+            try:
+                with open(f"tmp/optimizer_best_model_params_dict.pickle", 'rb') as f:
+                    optimizer_best_model_params_dict = pickle.load(f)
+            except:
+                optimizer_best_model_params_dict = dict()
+
+            optimizer_best_model_params_dict[trial.number] = result
+            with open(f"tmp/optimizer_best_model_params_dict.pickle", 'wb') as f:
+                pickle.dump(optimizer_best_model_params_dict, f)
+
             result = result[self.dataset_for_performance_optimization]
             if result is None:
                 logging.error(f"The error on the selected dataset is None or undefined. Either check if the dataset selected for optimization is not empty or if it is not smaller than parameter SEQ_DATA_LEN (or its default value DEFAULT_SEQ_DATA_LEN if SEQ_DATA_LEN is not defined.)")
@@ -174,6 +186,10 @@ class Optimizer():
         return study
 
     def execute_optimization(self, direction='minimize', n_trials=1000):
+        optimizer_best_model_params_dict = dict()
+        with open(f"tmp/optimizer_best_model_params_dict.pickle", 'wb') as f:
+            pickle.dump(optimizer_best_model_params_dict, f)
+
         study = self.optimize(direction=direction, n_trials=n_trials)
         best_study_params = study.best_params
         best_trial = study.best_trial
@@ -183,7 +199,11 @@ class Optimizer():
         oh_encoder_min_frequency = best_study_params["oh_encoder_min_frequency"]
         model_to_train = best_study_params["model_to_train"]
 
-        result = self.run_pipeline(
+        with open(f"tmp/optimizer_best_model_params_dict.pickle", 'rb') as f:
+            optimizer_best_model_params_dict = pickle.load(f)
+        best_iteration_result = optimizer_best_model_params_dict[best_trial.number]
+
+        final_run_result = self.run_pipeline(
             best_trial,
             imputer,
             outlier_method,
@@ -191,5 +211,9 @@ class Optimizer():
             oh_encoder_min_frequency,
             model_to_train,
         )
-        best_study_params["model_to_train"] = (best_study_params["model_to_train"], result)
+        best_study_params["model_to_train"] = (
+            best_study_params["model_to_train"],
+            (best_iteration_result[constants.BEST_PARAMETERS_NAME], best_iteration_result[constants.TRAIN_CV_SCORE_NAME]),
+            final_run_result
+        )
         return best_study_params
