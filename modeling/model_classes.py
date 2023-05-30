@@ -384,7 +384,15 @@ class MdfTsBaseModel(MdfBaseModel):
         return train, val, test, x_train, y_train, x_val, y_val, x_test, y_test
 
     @abstractmethod
+    def get_cv_score(self, X, y, cv, params):
+        pass
+
+    @abstractmethod
     def get_optuna_model_objective(estimator, X, y, cv):
+        pass
+
+    @abstractmethod
+    def train_model(self, X, y, params):
         pass
 
     def ts_train_with_timeseries_cv(self, estimator_class, param_grid):
@@ -394,33 +402,41 @@ class MdfTsBaseModel(MdfBaseModel):
         if TUNE_USING_OPTUNA:
             objective = self.get_optuna_model_objective(X=x, y=y, cv=cv)
             study = self.tune_with_optuna(objective, direction=constants.OPTUNA_MINIMIZE_DIRECTION, n_trials=NUM_OPTUNA_TRIALS)
-            estimator_obj = estimator_class(y=y, X=x, **study.best_params)
-            estimator_obj = estimator_obj.fit(y=y, X=x)
-            return estimator_obj, study.best_params
+            # estimator_obj = estimator_class(y=y, X=x, **study.best_params)
+            # estimator_obj = estimator_obj.fit(y=y, X=x)
+            # return estimator_obj, study.best_params
+            best_params = study.best_params
+            best_params_cv_score = self.get_cv_score(x, y, cv, best_params)
         else:
             param_grid = [dict(zip(list(param_grid.keys()), comb)) for comb in
                           list(itertools.product(*param_grid.values()))]
             results = []
             for params in param_grid:
-                scores = []
-                for train_index, test_index in cv:
-                    train_x = x.iloc[train_index]
-                    train_y = y.iloc[train_index]
-                    test_x = x.iloc[test_index]
-                    test_y = y.iloc[test_index]
-                    train_x, test_x = self.scale_cs_data(train=train_x, val=test_x, test=None)
-                    train_y, test_y = self.scale_cs_data(train=train_y, val=test_y, test=None)
-                    model = estimator_class(y=train_y, X=train_x, **params)
-                    model = model.fit(y=train_y, X=train_x)
-                    y_pred = model.predict(n_periods=len(test_x), X=test_x)
-                    score = self.scorer._score_func(test_y, y_pred)
-                    scores.append(score)
-                results.append((params, np.mean(scores)))
+                score = self.get_cv_score(self, x, y, cv, params)
+                # scores = []
+                # for train_index, test_index in cv:
+                #     train_x = x.iloc[train_index]
+                #     train_y = y.iloc[train_index]
+                #     test_x = x.iloc[test_index]
+                #     test_y = y.iloc[test_index]
+                #     train_x, test_x = self.scale_cs_data(train=train_x, val=test_x, test=None)
+                #     train_y, test_y = self.scale_cs_data(train=train_y, val=test_y, test=None)
+                #     model = estimator_class(y=train_y, X=train_x, **params)
+                #     model = model.fit(y=train_y, X=train_x)
+                #     y_pred = model.predict(n_periods=len(test_x), X=test_x)
+                #     score = self.scorer._score_func(test_y, y_pred)
+                #     scores.append(score)
+                # results.append((params, np.mean(scores)))
+                results.append((params, score))
 
-            best_result = sorted(results, key=lambda x: x[1])[0]
-            estimator_obj = estimator_class(y=y, X=x, **best_result[0])
-            estimator_obj = estimator_obj.fit(y=y, X=x)
-            return estimator_obj, best_result[0]
+            best_params, best_params_cv_score = sorted(results, key=lambda x: x[1])[0]
+            # estimator_obj = estimator_class(y=y, X=x, **best_result[0])
+            # estimator_obj = estimator_obj.fit(y=y, X=x)
+            # return estimator_obj, best_result[0], best_params_cv_score
+
+        model = self.train_model(X=x, y=y, params=best_params)
+
+        return  model, best_params, best_params_cv_score
 
 
 class MdfCsBaseModel(MdfBaseModel):
@@ -716,11 +732,12 @@ class MdfSarimax(MdfTsBaseModel):
         except:
             param_grid = self.default_param_grid
 
-        model, best_params = self.ts_train_with_timeseries_cv(estimator_class=estimator_class, param_grid=param_grid)
+        model, best_params, best_params_cv_score = self.ts_train_with_timeseries_cv(estimator_class=estimator_class, param_grid=param_grid)
+
         logging.info(f"The best parameters of the {self.model_name} model are: {best_params}")
 
         self.model = model
-        return self, best_params
+        return self, best_params, best_params_cv_score
 
     def predict(self,
                 x):  # over-riding predict of the parent class to handle specific prediction signature of auto_arima.predict.
@@ -741,21 +758,28 @@ class MdfSarimax(MdfTsBaseModel):
     def get_optuna_model_objective(self, X, y, cv):
         def objective(trial):
             params = self.get_optuna_params(trial)
-            scores = []
-            # for train_index, test_index in cv.split(X):
-            for train_index, test_index in cv:
-                train_x = X.iloc[train_index]
-                train_y = y.iloc[train_index]
-                test_x = X.iloc[test_index]
-                test_y = y.iloc[test_index]
-                model = auto_arima(y=train_y, X=train_x, **params)
-                model = model.fit(y=train_y, X=train_x)
-                y_pred = model.predict(n_periods=len(test_x), X=test_x)
-                score = self.scorer._score_func(test_y, y_pred)
-                scores.append(score)
-            return np.mean(scores)
+            return self.get_cv_score(X, y, cv, params)
 
         return objective
+
+    def get_cv_score(self, X, y, cv, params):
+        scores = []
+        for train_index, test_index in cv:
+            train_x = X.iloc[train_index]
+            train_y = y.iloc[train_index]
+            test_x = X.iloc[test_index]
+            test_y = y.iloc[test_index]
+            model = auto_arima(y=train_y, X=train_x, **params)
+            model = model.fit(y=train_y, X=train_x)
+            y_pred = model.predict(n_periods=len(test_x), X=test_x)
+            score = self.scorer._score_func(test_y, y_pred)
+            scores.append(score)
+        return np.mean(scores)
+
+    def train_model(self, X, y, params):
+        model = auto_arima(y=y, X=X, **params)
+        model = model.fit(y=y, X=X)
+        return model
 
 
 class MdfProphet(MdfTsBaseModel):

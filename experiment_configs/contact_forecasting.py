@@ -35,23 +35,24 @@ TRAIN_VAL_SPLIT_DATE = '2023-06-01'
 VAL_TEST_SPLIT_DATE = '2023-06-01'
 # CATEGORICAL_ENGINEERED_FEATURES = ['day', 'month']
 CATEGORICAL_ENGINEERED_FEATURES = []
-MODELS_TO_TRAIN = [
-    constants.RIDGE_NAME, constants.LASSO_NAME, constants.ELASTICNET_NAME,
-    constants.LINEARREGRESSION_NAME, constants.XGB_NAME, constants.LSTM_NAME, constants.GRU_NAME, constants.CNN_NAME,
-    # constants.SARIMAX_NAME
-]
+# MODELS_TO_TRAIN = [
+#     constants.RIDGE_NAME, constants.LASSO_NAME, constants.ELASTICNET_NAME,
+#     constants.LINEARREGRESSION_NAME, constants.XGB_NAME,  constants.LGBM_NAME,
+#     constants.LSTM_NAME, constants.GRU_NAME, constants.CNN_NAME,
+#     # constants.SARIMAX_NAME
+# ]
 # MODELS_TO_TRAIN = [
 #     constants.ELASTICNET_NAME,
 # ]
 # MODELS_TO_TRAIN = [
 #     constants.LSTM_NAME, constants.GRU_NAME, constants.CNN_NAME,
 # ]
-# MODELS_TO_TRAIN = [
-#     constants.SARIMAX_NAME,
-# ]
+MODELS_TO_TRAIN = [
+    constants.SARIMAX_NAME,
+]
 # MODELS_TO_TRAIN = [
 #     constants.RIDGE_NAME, constants.LASSO_NAME, constants.ELASTICNET_NAME,
-#         constants.LINEARREGRESSION_NAME, constants.XGB_NAME
+#         constants.LINEARREGRESSION_NAME, constants.XGB_NAME, constants.LGBM_NAME, constants.SARIMAX_NAME,
 # ]
 
 EVALUATION_METRIC_TO_USE = 'neg_mean_absolute_percentage_error'

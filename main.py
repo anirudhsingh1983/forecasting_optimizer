@@ -36,7 +36,7 @@ experiment_id = 'e00eb1e7-cc1b-417a-87fe-a8dfff2a2c29'
 # experiment_id = experiment_constants.EXPERIMENT_ID
 
 op = Optimizer(experiment_id=experiment_id)
-best_pipeline = op.execute_optimization(direction='minimize', n_trials=20)
+best_pipeline = op.execute_optimization(direction='minimize', n_trials=50)
 print(best_pipeline)
 uf.save_data(best_pipeline, experiment_id, name=f"final_result")
 
