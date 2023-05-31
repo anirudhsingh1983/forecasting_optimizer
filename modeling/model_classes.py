@@ -402,37 +402,17 @@ class MdfTsBaseModel(MdfBaseModel):
         if TUNE_USING_OPTUNA:
             objective = self.get_optuna_model_objective(X=x, y=y, cv=cv)
             study = self.tune_with_optuna(objective, direction=constants.OPTUNA_MINIMIZE_DIRECTION, n_trials=NUM_OPTUNA_TRIALS)
-            # estimator_obj = estimator_class(y=y, X=x, **study.best_params)
-            # estimator_obj = estimator_obj.fit(y=y, X=x)
-            # return estimator_obj, study.best_params
             best_params = study.best_params
-            best_params_cv_score = self.get_cv_score(x, y, cv, best_params)
+            best_params_cv_score = study.best_value
         else:
             param_grid = [dict(zip(list(param_grid.keys()), comb)) for comb in
                           list(itertools.product(*param_grid.values()))]
             results = []
             for params in param_grid:
                 score = self.get_cv_score(self, x, y, cv, params)
-                # scores = []
-                # for train_index, test_index in cv:
-                #     train_x = x.iloc[train_index]
-                #     train_y = y.iloc[train_index]
-                #     test_x = x.iloc[test_index]
-                #     test_y = y.iloc[test_index]
-                #     train_x, test_x = self.scale_cs_data(train=train_x, val=test_x, test=None)
-                #     train_y, test_y = self.scale_cs_data(train=train_y, val=test_y, test=None)
-                #     model = estimator_class(y=train_y, X=train_x, **params)
-                #     model = model.fit(y=train_y, X=train_x)
-                #     y_pred = model.predict(n_periods=len(test_x), X=test_x)
-                #     score = self.scorer._score_func(test_y, y_pred)
-                #     scores.append(score)
-                # results.append((params, np.mean(scores)))
                 results.append((params, score))
 
             best_params, best_params_cv_score = sorted(results, key=lambda x: x[1])[0]
-            # estimator_obj = estimator_class(y=y, X=x, **best_result[0])
-            # estimator_obj = estimator_obj.fit(y=y, X=x)
-            # return estimator_obj, best_result[0], best_params_cv_score
 
         model = self.train_model(X=x, y=y, params=best_params)
 
@@ -450,25 +430,28 @@ class MdfCsBaseModel(MdfBaseModel):
         x_test, y_test = self.split_xy(test)
         return train, val, test, x_train, y_train, x_val, y_val, x_test, y_test
 
-    def get_optuna_cs_objective(self, estimator, get_optuna_params, X, y, cv, scoring):
+    def get_cv_score(self, model, params, x, y, cv):
+        scores = []
+        for train_index, test_index in cv:
+            train_x = x.iloc[train_index]
+            train_y = y.iloc[train_index]
+            test_x = x.iloc[test_index]
+            test_y = y.iloc[test_index]
+            train_x, test_x, _ = self.scale_cs_data(train=train_x, val=test_x, test=None)
+            train_y, test_y, _ = self.scale_cs_data(train=train_y, val=test_y, test=None)
+            model = model.set_params(**params)
+            model = model.fit(X=train_x, y=train_y)
+            y_pred = model.predict(X=test_x)
+            score = self.scorer._score_func(test_y, y_pred)
+            scores.append(score)
+
+        return np.mean(scores)
+
+    def get_optuna_cs_objective(self, estimator, get_optuna_params, X, y, cv):
         def objective(trial):
             params = get_optuna_params(trial)
-            model = estimator.set_params(**params)
-            scores = []
-            for train_index, test_index in cv:
-                train_x = X.iloc[train_index]
-                train_y = y.iloc[train_index]
-                test_x = X.iloc[test_index]
-                test_y = y.iloc[test_index]
-                train_x, test_x, _ = self.scale_cs_data(train=train_x, val=test_x, test=None)
-                train_y, test_y, _ = self.scale_cs_data(train=train_y, val=test_y, test=None)
-                model = model.fit(X=train_x, y=train_y)
-                y_pred = model.predict(X=test_x)
-                score = self.scorer._score_func(test_y, y_pred)
-                scores.append(score)
-
-            mean_score = np.mean(scores)
-            return mean_score
+            score = self.get_cv_score(estimator, params, X, y, cv)
+            return score
 
         return objective
 
@@ -482,22 +465,9 @@ class MdfCsBaseModel(MdfBaseModel):
         )
         x, y = self.split_xy(data)
         gscv.fit(X=x, y=y)
-        model = model.set_params(**gscv.best_params)
         cv = KFold(n_splits=CV_FOLDS)
-        scores = []
-        for train_index, test_index in cv:
-            train_x = x.iloc[train_index]
-            train_y = y.iloc[train_index]
-            test_x = x.iloc[test_index]
-            test_y = y.iloc[test_index]
-            train_x, test_x, _ = self.scale_cs_data(train=train_x, val=test_x, test=None)
-            train_y, test_y, _ = self.scale_cs_data(train=train_y, val=test_y, test=None)
-            model = model.fit(X=train_x, y=train_y)
-            y_pred = model.predict(X=test_x)
-            score = self.scorer._score_func(test_y, y_pred)
-            scores.append(score)
-
-        best_params_cv_score = np.mean(scores)
+        best_params_cv_score = self.get_cv_score(model, gscv.best_params, x, y, cv)
+        model = model.set_params(**gscv.best_params)
         model = model.fit(y=y, X=x)
         return model, gscv.best_params_, best_params_cv_score
 
@@ -507,32 +477,14 @@ class MdfCsBaseModel(MdfBaseModel):
         if TUNE_USING_OPTUNA:
             cv = self.get_cv(timeseries_cv_equal_sets=TIMESERIES_CV_EQUAL_SETS, data=data)
 
-            objective = self.get_optuna_cs_objective(
-                estimator=model,
-                get_optuna_params=self.get_optuna_params,
-                X=x,
-                y=y,
-                cv=cv,
-                scoring=self.metric,
-            )
+            objective = self.get_optuna_cs_objective(estimator=model, get_optuna_params=self.get_optuna_params, X=x,
+                                                     y=y, cv=cv)
             study = self.tune_with_optuna(objective, direction=constants.OPTUNA_MINIMIZE_DIRECTION, n_trials=NUM_OPTUNA_TRIALS)
-            model = model.set_params(**study.best_params)
-            scores = []
-            for train_index, test_index in cv:
-                train_x = x.iloc[train_index]
-                train_y = y.iloc[train_index]
-                test_x = x.iloc[test_index]
-                test_y = y.iloc[test_index]
-                train_x, test_x, _ = self.scale_cs_data(train=train_x, val=test_x, test=None)
-                train_y, test_y, _ = self.scale_cs_data(train=train_y, val=test_y, test=None)
-                model = model.fit(X=train_x, y=train_y)
-                y_pred = model.predict(X=test_x)
-                score = self.scorer._score_func(test_y, y_pred)
-                scores.append(score)
+            # best_params_cv_score = self.get_cv_score(model, study.best_params, x, y, cv)
 
-            best_params_cv_score = np.mean(scores)
+            model = model.set_params(**study.best_params)
             model = model.fit(y=y, X=x)
-            return model, study.best_params, best_params_cv_score
+            return model, study.best_params, study.best_value
         else:
             cv = self.get_cv(timeseries_cv_equal_sets=False, data=data)
 
@@ -683,8 +635,10 @@ class MdfSeqBaseModel(MdfBaseModel):
             best_trial = study.best_trial
             best_params = study.best_params
 
-            best_params_cv_score, optimizer = self.get_optuna_seq_cv_score(best_trial, x_train, y_train, cv)
+            best_params_cv_score = study.best_value
 
+            optimizer_args = self.get_optimizer_optuna_args(best_trial)
+            optimizer = tf.keras.optimizers.Adam(**optimizer_args)
             model = self.get_model_object(best_trial)
             model.compile(optimizer=optimizer, loss=self.loss, metrics=[self.loss])
             model.fit(y=y_train, x=x_train)
