@@ -10,6 +10,7 @@ from sklearn.impute import SimpleImputer
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.preprocessing import OneHotEncoder
 import optuna
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 import constants
 import data_landing
@@ -97,6 +98,15 @@ class Optimizer():
         except:
             self.dataset_for_performance_optimization = framework_settings.DEFAULT_DATASET_FOR_PERFORMANCE_OPTIMIZATION
 
+        try:
+            num_optuna_processes = experiment_constants.NUM_OPTUNA_PROCESSES
+            if num_optuna_processes is None:
+                num_optuna_processes = framework_settings.DEFAULT_NUM_OPTUNA_PROCESSES
+        except:
+            num_optuna_processes = framework_settings.DEFAULT_NUM_OPTUNA_PROCESSES
+        self.num_optuna_processes = num_optuna_processes
+
+
     def get_data(self):
         data = data_landing.execute_data_landing(experiment_id=self.experiment_id, data_loading_function=self.data_loading_function)
 
@@ -181,6 +191,9 @@ class Optimizer():
 
     def optimize(self, direction='minimize', n_trials=1000):
         study = optuna.create_study(direction=direction)
+        executor = ProcessPoolExecutor(max_workers=self.num_optuna_processes)
+        study.set_user_attr("executor", executor)
+
         objective = self.get_optimization_objective()
         study.optimize(objective, n_trials=n_trials)
         return study
