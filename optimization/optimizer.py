@@ -1,26 +1,23 @@
 import importlib
 import logging
-import uuid
 import pickle
+import uuid
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime
 
-import numpy as np
-import pandas as pd
-from sklearn.impute import SimpleImputer
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.preprocessing import OneHotEncoder
 import optuna
-from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+import pandas as pd
+from sklearn.preprocessing import OneHotEncoder
 
 import constants
 import data_landing
-import framework_settings
 import experiment_settings
+import framework_settings
 from data_preprocessing.data_preprocessing import DataPreprocessing
 from eda import eda
 from feature_engineering.feature_engineering import FeatureEngineering
-from modeling.modeling import Modeling
 from modeling import modeling_constants
+from modeling.modeling import Modeling
 
 pd.set_option('display.expand_frame_repr', True)
 pd.set_option('display.max_columns', None)  # Set to None for unlimited number of output rows.
@@ -204,6 +201,7 @@ class Optimizer():
             pickle.dump(optimizer_best_model_params_dict, f)
 
         study = self.optimize(direction=direction, n_trials=n_trials)
+        # optuna.visualization.plot_param_importances(study)
         best_study_params = study.best_params
         best_trial = study.best_trial
         imputer = best_study_params["imputer"]

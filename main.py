@@ -2,16 +2,9 @@ import importlib
 import logging
 from datetime import datetime
 
-import numpy as np
 import pandas as pd
-from sklearn.impute import SimpleImputer
 
-import data_landing
 import experiment_settings
-from data_preprocessing import data_preprocessing
-from eda import eda
-from feature_engineering import feature_engineering
-from modeling import modeling
 from optimization.optimizer import Optimizer
 from util import utility_functions as uf
 
@@ -36,7 +29,7 @@ experiment_id = 'e00eb1e7-cc1b-417a-87fe-a8dfff2a2c29'
 # experiment_id = experiment_constants.EXPERIMENT_ID
 
 op = Optimizer(experiment_id=experiment_id)
-best_pipeline = op.execute_optimization(direction='minimize', n_trials=50)
+best_pipeline = op.execute_optimization(direction='minimize', n_trials=100)
 print(best_pipeline)
 uf.save_data(best_pipeline, experiment_id, name=f"final_result")
 

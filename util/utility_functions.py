@@ -366,3 +366,24 @@ def cs_to_seq(x, y, length, sampling_rate, stride):
     x = np.array([seq for seq, _ in data_gen]).squeeze()
     y = np.array([target for _, target in data_gen])
     return x, y
+
+
+def get_lags(trial, df, cols, lags=[1], dropna=True):
+    for col in cols:
+        if isinstance(lags, dict):
+            col_lags = lags[col]
+        else:
+            col_lags = lags
+
+        for lag in col_lags:
+            df[f"{col}_lag{lag}"] = df[col].shift(lag)
+
+    if dropna:
+        if isinstance(lags, dict):
+            max_lag = np.concatenate(list(lags.values())).max()
+        else:
+            max_lag = np.array(lags).max()
+
+        df = df.iloc[max_lag:, :]
+
+    return  df

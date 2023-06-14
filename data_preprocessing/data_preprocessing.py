@@ -81,12 +81,20 @@ class DataPreprocessing():
         self.test = data[data.index >= self.val_test_split_date]
 
     def _treat_missing_values(self):
-        self.imputer.fit(self.train)
-        self.train = pd.DataFrame(data=self.imputer.transform(self.train), index=self.train.index, columns=self.train.columns)
-        if len(self.val) > 0:
-            self.val = pd.DataFrame(data=self.imputer.transform(self.val), index=self.val.index, columns=self.val.columns)
-        if len(self.test) > 0:
-            self.test = pd.DataFrame(data=self.imputer.transform(self.test), index=self.test.index, columns=self.test.columns)
+        features = self.train.drop(columns=[experiment_constants.TARGET_COL]).columns
+        if self.imputer in ['backfill', 'bfill', 'ffill']:
+            self.train.loc[:, features] = self.train[features].fillna(method=self.imputer)
+            if len(self.val) > 0:
+                self.val.loc[:, features] = self.val[features].fillna(method=self.imputer)
+            if len(self.test) > 0:
+                self.test.loc[:, features] = self.test[features].fillna(method=self.imputer)
+        else:
+            self.imputer.fit(self.train)
+            self.train = pd.DataFrame(data=self.imputer.transform(self.train), index=self.train.index, columns=self.train.columns)
+            if len(self.val) > 0:
+                self.val = pd.DataFrame(data=self.imputer.transform(self.val), index=self.val.index, columns=self.val.columns)
+            if len(self.test) > 0:
+                self.test = pd.DataFrame(data=self.imputer.transform(self.test), index=self.test.index, columns=self.test.columns)
 
 
     def execute_preprocessing(self):

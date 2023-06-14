@@ -55,10 +55,17 @@ def _fill_timeseries_gaps(data):
     full_index = pd.date_range(start=pd.to_datetime(data.index.min()), end=pd.to_datetime(data.index.max()),
                                freq=ts_interval)
     full_index = full_index.union(data.index)
+    gap_idx = set(full_index) - set(data.index)
+    gap_idx = pd.Index(gap_idx).sort_values()
     data = data.reindex(full_index)
     data = data.sort_index(ascending=True)
-    data[experiment_constants.TARGET_COL] = data[experiment_constants.TARGET_COL].fillna(
-        experiment_constants.TIMESERIES_TARGET_FILL_GAP_VALUE)
+
+    if experiment_constants.TIMESERIES_TARGET_FILL_GAP_VALUE in ['backfill', 'bfill', 'ffill']:
+        data[experiment_constants.TARGET_COL].loc[gap_idx] = data[experiment_constants.TARGET_COL].fillna(
+            method = experiment_constants.TIMESERIES_TARGET_FILL_GAP_VALUE).loc[gap_idx]
+    else:
+        data[experiment_constants.TARGET_COL].loc[gap_idx] = data[experiment_constants.TARGET_COL].fillna(
+            value=experiment_constants.TIMESERIES_TARGET_FILL_GAP_VALUE).loc[gap_idx]
     return data
 
 
@@ -78,7 +85,14 @@ def _generate_plots(data):
         imputing_value = imputing_val_dict[TARGET_COL]
     except:
         imputing_value = framework_settings.DEFAULT_CONTINUOUS_MISSING_IMPUTATION_VALUE
-    target.loc[target.isna()] = imputing_value
+
+    if imputing_value in ['backfill', 'bfill', 'ffill']:
+        target = target.fillna(method = imputing_value)
+    else:
+        target = target.fillna(value=imputing_value)
+
+
+    # target.loc[target.isna()] = imputing_value
     plt.plot(target, label=constants.TARGET_NAME)
     plt.xticks(rotation=90)
     plt.legend()
@@ -95,7 +109,11 @@ def _generate_plots(data):
             except:
                 imputing_value = framework_settings.DEFAULT_CONTINUOUS_MISSING_IMPUTATION_VALUE
 
-            exo_continuous.loc[exo_continuous[col].isna(), col] = imputing_value
+            if imputing_value in ['backfill', 'bfill', 'ffill']:
+                exo_continuous.loc[:, col] = exo_continuous[col].fillna(method=imputing_value)
+            else:
+                exo_continuous.loc[:, col] = exo_continuous[col].fillna(value=imputing_value)
+            # exo_continuous.loc[exo_continuous[col].isna(), col] = imputing_value
 
             plt.plot(exo_continuous[col], label=f"{col}")
             plt.xticks(rotation=90)
@@ -108,7 +126,11 @@ def _generate_plots(data):
             except:
                 imputing_value = framework_settings.DEFAULT_CATEGORICAL_MISSING_IMPUTATION_VALUE
 
-            exo_categorical.loc[exo_categorical[col].isna(), col] = imputing_value
+            if imputing_value in ['backfill', 'bfill', 'ffill']:
+                exo_categorical.loc[:, col] = exo_categorical[col].fillna(method=imputing_value)
+            else:
+                exo_categorical.loc[:, col] = exo_categorical[col].fillna(value=imputing_value)
+            # exo_categorical.loc[exo_categorical[col].isna(), col] = imputing_value
 
             types = [date, time, datetime]
             if type(exo_categorical[col].iloc[0]) in types:
