@@ -387,3 +387,24 @@ def get_lags(trial, df, cols, lags=[1], dropna=True):
         df = df.iloc[max_lag:, :]
 
     return  df
+
+
+def get_diffs(trial, df, cols, diffs=[1], dropna=True):
+    for col in cols:
+        if isinstance(diffs, dict):
+            col_diffs = diffs[col]
+        else:
+            col_diffs = diffs
+
+        for diff in col_diffs:
+            df[f"{col}_diff{diff}"] = df[col].diff(periods=diff)
+
+    if dropna:
+        if isinstance(diffs, dict):
+            max_diff = np.concatenate(list(diffs.values())).max()
+        else:
+            max_diff = np.array(diffs).max()
+
+        df = df.iloc[max_diff:, :]
+
+    return  df

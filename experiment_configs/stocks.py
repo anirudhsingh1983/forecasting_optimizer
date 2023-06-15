@@ -41,8 +41,8 @@ CATEGORICAL_ENGINEERED_FEATURES = []
 MODELS_TO_TRAIN = [
     constants.RIDGE_NAME, constants.LASSO_NAME, constants.ELASTICNET_NAME,
     constants.LINEARREGRESSION_NAME, constants.XGB_NAME,
-    constants.LGBM_NAME,
-    constants.LSTM_NAME, constants.GRU_NAME, constants.CNN_NAME,
+    # constants.LGBM_NAME,
+    # constants.LSTM_NAME, constants.GRU_NAME, constants.CNN_NAME,
     # constants.SARIMAX_NAME
 ]
 # MODELS_TO_TRAIN = [
@@ -93,15 +93,15 @@ FEATURE_ENGINEERING_FUNCTION = sf.feature_engineering
 IMPUTERS = ['ffill']
 
 # CATEGORICAL_FEATURE_ENCODER = OneHotEncoder(handle_unknown='ignore', min_frequency = 0.02)
-FEATURE_ENGINEERING_SCALERS = [None, MinMaxScaler()]
-# FEATURE_ENGINEERING_SCALERS = [None]
+# FEATURE_ENGINEERING_SCALERS = [None, MinMaxScaler()]
+FEATURE_ENGINEERING_SCALERS = [None]
 
 CV_FOLDS = 5
 TIMESERIES_CV = True
 TIMESERIES_CV_EQUAL_SETS = False
 TIMESERIES_CV_APPROACH = None
 
-TIMESERIES_CV_WINDOW = 190
+TIMESERIES_CV_WINDOW = 610
 TIMESERIES_CV_STEP = 1
 FORECASTING_HORIZON = [1]
 
