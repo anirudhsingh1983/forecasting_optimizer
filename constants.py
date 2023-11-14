@@ -34,6 +34,7 @@ GRU_NAME = 'gru'
 LSTM_NAME = 'lstm'
 TRANSFORMER_NAME = 'transformer'
 BERT_NAME = 'bert'
+H2O_NAME = 'h2o'
 
 MSE_NAME = 'neg_mean_squared_error'
 MAE_NAME = 'neg_mean_absolute_error'

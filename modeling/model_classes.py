@@ -23,6 +23,7 @@ from tensorflow.keras import Input
 from tensorflow.keras.layers import LSTM, GRU, Conv2D, MaxPool2D, Dense, Dropout, Flatten
 from tensorflow.keras.models import Model, Sequential
 from xgboost import XGBRegressor
+import h2o
 
 import constants
 import experiment_settings
@@ -480,7 +481,6 @@ class MdfCsBaseModel(MdfBaseModel):
             objective = self.get_optuna_cs_objective(estimator=model, get_optuna_params=self.get_optuna_params, X=x,
                                                      y=y, cv=cv)
             study = self.tune_with_optuna(objective, direction=constants.OPTUNA_MINIMIZE_DIRECTION, n_trials=NUM_OPTUNA_TRIALS)
-            # best_params_cv_score = self.get_cv_score(model, study.best_params, x, y, cv)
 
             model = model.set_params(**study.best_params)
             model = model.fit(y=y, X=x)
@@ -986,6 +986,82 @@ class MdfLgbm(MdfCsBaseModel):
             ),
         }
         return params
+
+
+class MdfH2o(MdfCsBaseModel):
+    def __init__(self, data, target_col_name, feature_engineering_scaler, experiment_id):
+        super().__init__(data, target_col_name, feature_engineering_scaler, experiment_id)
+        self.model_name = constants.H2O_NAME
+        self.datasets = self.get_cs_datasets()
+
+    def fit(self):
+        train, val, test = self.data
+        model = LGBMRegressor()
+        try:
+            param_grid = experiment_constants.MODEL_PARAM_GRIDS[self.model_name]
+        except:
+            param_grid = self.default_param_grid
+
+            cv = self.get_cv(timeseries_cv_equal_sets=False, data=train)
+
+            data, _, _, x, y, _, _, _, _ = self.datasets
+
+            h2o.init()
+
+            scores = []
+            for train_index, test_index in cv:
+                train_x = x.iloc[train_index]
+                train_y = y.iloc[train_index]
+                test_x = x.iloc[test_index]
+                test_y = y.iloc[test_index]
+                train_x, test_x, _ = self.scale_cs_data(train=train_x, val=test_x, test=None)
+                train_y, test_y, _ = self.scale_cs_data(train=train_y, val=test_y, test=None)
+                model = h2o.automl(
+                    max_models=10,  # Maximum number of models to build
+                    seed=42,  # Set a random seed for reproducibility
+                    training_frame=data,  # Specify the training data
+                    x=x.columns,  # Specify the input features
+                    y=y.name  # Specify the target variable
+                )
+                model = model.fit(X=train_x, y=train_y)
+                y_pred = model.predict(X=test_x)
+                score = self.scorer._score_func(test_y, y_pred)
+                scores.append(score)
+
+            return np.mean(scores)
+
+            best_params_cv_score = -scores["test_score"].mean()
+            model = model.fit(y=y, X=x)
+            return model, gscv.best_params_, best_params_cv_score
+
+
+        model, best_params, best_params_cv_score = self.cs_train_with_timeseries_cv(model=model, param_grid=param_grid)
+        logging.info(f"The best parameters of the {self.model_name} model are: {best_params}")
+
+        self.model = model
+        return self, best_params, best_params_cv_score
+
+    def get_optuna_params(self, trial):
+        params = {
+            "max_models": trial.suggest_int("max_models", [1000]),
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.3),
+            "num_leaves": trial.suggest_int("num_leaves", 20, 3000, step=20),
+            "max_depth": trial.suggest_int("max_depth", 3, 12),
+            "min_data_in_leaf": trial.suggest_int("min_data_in_leaf", 200, 10000, step=100),
+            "max_bin": trial.suggest_int("max_bin", 200, 300),
+            "lambda_l1": trial.suggest_int("lambda_l1", 0, 100, step=5),
+            "lambda_l2": trial.suggest_int("lambda_l2", 0, 100, step=5),
+            "min_gain_to_split": trial.suggest_float("min_gain_to_split", 0, 15),
+            "bagging_fraction": trial.suggest_float(
+                "bagging_fraction", 0.2, 0.95, step=0.1
+            ),
+            "bagging_freq": trial.suggest_categorical("bagging_freq", [1]),
+            "feature_fraction": trial.suggest_float(
+                "feature_fraction", 0.2, 0.95, step=0.1
+            ),
+        }
+        return params
+
 
 
 class MdfCnn(MdfSeqBaseModel):
