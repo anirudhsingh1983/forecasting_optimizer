@@ -1,0 +1,66 @@
+[build-system]
+# Minimum requirements for the build system to execute.
+# See https://github.com/scipy/scipy/pull/12940 for the AIX issue.
+requires = [
+  "h2o",
+  "lightgbm",
+  "matplotlib",
+  "numpy",
+  "optuna",
+  "pandas",
+  "pmdarima",
+  "protobuf",
+  "scikit_learn",
+  "scipy",
+  "sktime",
+  "tensorflow",
+  "tqdm",
+  "xgboost",
+]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = 'forecasting_optimizer'
+version = "0.1.0"
+description = "Optimizer using Optuna to optimize a forecasting pipeline by finding the best combination of data processing, feature engineering, and modeling."
+dynamic = [
+  'version'
+]
+description = 'Powerful data structures for data analysis, time series, and statistics'
+
+
+
+[project]
+name = 'forecasting_optimizer'
+version = "0.1.0"
+description = "Optimizer using Optuna to optimize a forecasting pipeline by finding the best combination of data processing, feature engineering, and modeling."
+requires-python = ">=3.9"
+readme = "README.md"
+authors = [
+    {name = "Anirudh Singh", email = "anirudhsingh1983@gmail.com"},
+]
+maintainers = [
+  {name = "Anirudh Singh", email = "anirudhsingh1983@gmail.com"},
+]
+license = {file = "LICENSE.txt"}
+keywords = [
+    "Anirudh", "optimzer", "forecasting"
+]
+classifiers = [
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: Implementation :: CPython",
+    "License :: OSI Approved :: BSD License",
+    "Intended Audience :: Developers",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Operating System :: MacOS :: MacOS X",
+]
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/anirudhsingh1983/forecasting_optimizer"
+Documentation = "https://github.com/anirudhsingh1983/forecasting_optimizer/blob/main/README.md"
+
+[project.scripts]
+run_optimizer = "forecasting_optimizer.__main__:main"
