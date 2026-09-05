@@ -1,66 +1,74 @@
 [build-system]
-# Minimum requirements for the build system to execute.
-# See https://github.com/scipy/scipy/pull/12940 for the AIX issue.
-requires = [
-  "h2o",
-  "lightgbm",
-  "matplotlib",
-  "numpy",
-  "optuna",
-  "pandas",
-  "pmdarima",
-  "protobuf",
-  "scikit_learn",
-  "scipy",
-  "sktime",
-  "tensorflow",
-  "tqdm",
-  "xgboost",
-]
-build-backend = "setuptools.build_meta"
+requires = ["uv_build>=0.12.10,<0.13"]
+build-backend = "uv_build"
 
 [project]
-name = 'forecasting_optimizer'
+name = "forecasting_optimizer"
 version = "0.1.0"
-description = "Optimizer using Optuna to optimize a forecasting pipeline by finding the best combination of data processing, feature engineering, and modeling."
-dynamic = [
-  'version'
-]
-description = 'Powerful data structures for data analysis, time series, and statistics'
-
-
-
-[project]
-name = 'forecasting_optimizer'
-version = "0.1.0"
-description = "Optimizer using Optuna to optimize a forecasting pipeline by finding the best combination of data processing, feature engineering, and modeling."
-requires-python = ">=3.9"
+description = "Optimize forecasting pipelines and model hyperparameters."
 readme = "README.md"
+requires-python = ">=3.9,<3.14"
+license = "BSD-3-Clause"
+license-files = ["LICENSE.txt"]
 authors = [
     {name = "Anirudh Singh", email = "anirudhsingh1983@gmail.com"},
 ]
 maintainers = [
-  {name = "Anirudh Singh", email = "anirudhsingh1983@gmail.com"},
+    {name = "Anirudh Singh", email = "anirudhsingh1983@gmail.com"},
 ]
-license = {file = "LICENSE.txt"}
-keywords = [
-    "Anirudh", "optimzer", "forecasting"
-]
+keywords = ["forecasting", "hyperparameter optimization", "time series"]
 classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: Implementation :: CPython",
-    "License :: OSI Approved :: BSD License",
-    "Intended Audience :: Developers",
-    "Operating System :: POSIX :: Linux",
-    "Operating System :: Microsoft :: Windows",
-    "Operating System :: MacOS",
-    "Operating System :: MacOS :: MacOS X",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
-dependencies = []
+dependencies = [
+    "google-cloud-bigquery[bqstorage,pandas]",
+    "google-cloud-bigquery-storage",
+    "h2o",
+    "lightgbm",
+    "matplotlib",
+    "numpy",
+    "optuna",
+    "pandas",
+    "pmdarima",
+    "protobuf",
+    "scikit-learn",
+    "scipy",
+    "sktime",
+    "tables",
+    "tensorflow",
+    "tqdm",
+    "xgboost",
+    "yfinance",
+]
+
+[project.scripts]
+forecasting-optimizer = "forecasting_optimizer.__main__:main"
+
+[dependency-groups]
+dev = [
+    "black",
+    "pylint",
+]
 
 [project.urls]
 Homepage = "https://github.com/anirudhsingh1983/forecasting_optimizer"
 Documentation = "https://github.com/anirudhsingh1983/forecasting_optimizer/blob/main/README.md"
+Repository = "https://github.com/anirudhsingh1983/forecasting_optimizer"
 
-[project.scripts]
-run_optimizer = "forecasting_optimizer.__main__:main"
+[tool.uv]
+package = true
+
+[tool.black]
+line-length = 80
+target-version = ["py39"]
+
+[tool.pylint.format]
+max-line-length = 80
+
+[tool.pylint.main]
+py-version = "3.9"
